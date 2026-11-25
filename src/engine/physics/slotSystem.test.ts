@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultVolume } from '../../data/defaultBooks';
 import type { BookModel } from '../../types/contracts';
-import { computeShelfLayout } from '../layout/shelfLayout';
+import { computeBookSlotRects, computeShelfLayout } from '../layout/shelfLayout';
 import {
   buildNeatPoses,
   canCompartmentFit,
   commitBookPlacement,
+  computeInsertionPreview,
   enterOpenFromChaos,
   getEffectiveDragCenter,
   isShortTap,
@@ -94,5 +95,102 @@ describe('SlotSystem kinematics, capacity, and touch ergonomics', () => {
 
     commitBookPlacement(volume.books, volume.books[0].id, 4, 0);
     expect(volume.books[0].placement).toEqual({ compartmentIndex: 4, orderInCompartment: 0 });
+  });
+
+  it('preserves left or right free drop edge in an empty compartment without snapping to center', () => {
+    const volume = createDefaultVolume(1, '3x3');
+    for (const b of volume.books) b.placement = null;
+    const layout = computeShelfLayout(1440, 900, 3, 3);
+    const comp = layout.compartments[4];
+
+    const leftBook = volume.books[0];
+    const leftPreview = computeInsertionPreview(
+      leftBook,
+      comp.x + comp.w * 0.14,
+      comp.y + comp.h * 0.5,
+      volume.books,
+      layout
+    )!;
+    expect(leftPreview).not.toBeNull();
+    commitBookPlacement(volume.books, leftBook.id, 4, leftPreview.insertIndex, leftPreview.slotNormX);
+    expect(leftBook.placement?.normX).toBeLessThan(0.2);
+
+    const rightBook = volume.books[1];
+    const rightPreview = computeInsertionPreview(
+      rightBook,
+      comp.x + comp.w * 0.86,
+      comp.y + comp.h * 0.5,
+      volume.books,
+      layout
+    )!;
+    expect(rightPreview).not.toBeNull();
+    commitBookPlacement(volume.books, rightBook.id, 4, rightPreview.insertIndex, rightPreview.slotNormX);
+
+    expect(leftBook.placement?.normX).toBeLessThan(0.2);
+    expect(rightBook.placement?.normX).toBeGreaterThan(0.65);
+  });
+
+  it('keeps remaining books stationary when pulling a middle or edge book out of a compartment', () => {
+    const volume = createDefaultVolume(1, '3x3');
+    const layout = computeShelfLayout(1440, 900, 3, 3);
+    const comp = layout.compartments[1];
+
+    const inComp = volume.books
+      .filter((b) => b.placement?.compartmentIndex === 1)
+      .sort((a, b) => (a.placement?.orderInCompartment ?? 0) - (b.placement?.orderInCompartment ?? 0));
+    expect(inComp).toHaveLength(4);
+
+    const beforeRects = computeBookSlotRects(inComp, comp);
+    const removed = inComp[1];
+    commitBookPlacement(volume.books, removed.id, null);
+
+    const remaining = volume.books.filter((b) => b.placement?.compartmentIndex === 1);
+    expect(remaining).toHaveLength(3);
+    const afterRects = computeBookSlotRects(remaining, comp);
+
+    for (const book of remaining) {
+      expect(afterRects.get(book.id)!.x).toBeCloseTo(beforeRects.get(book.id)!.x, 4);
+    }
+  });
+
+  it('nudges neighbors minimally only on overlap while leaving distant compartment books untouched', () => {
+    const volume = createDefaultVolume(1, '3x3');
+    for (const b of volume.books) b.placement = null;
+    const layout = computeShelfLayout(1440, 900, 3, 3);
+    const comp = layout.compartments[4];
+
+    const anchor = volume.books[0];
+    anchor.placement = { compartmentIndex: 4, orderInCompartment: 0, normX: 0.72 };
+
+    // 먼 왼쪽 빈 공간 삽입: 기존 오른쪽 책 고정
+    const farLeft = volume.books[1];
+    const farPreview = computeInsertionPreview(
+      farLeft,
+      comp.x + comp.w * 0.16,
+      comp.y + comp.h * 0.5,
+      volume.books,
+      layout
+    )!;
+    expect(farPreview.slotNormX.get(anchor.id)).toBeCloseTo(0.72, 4);
+    expect(farPreview.slotNormX.get(farLeft.id)!).toBeLessThan(0.2);
+
+    // 겹치는 바로 옆 삽입: 기존 책이 우측으로만 최소 밀려나며 칸 경계 내부 유지
+    const nearOverlap = volume.books[2];
+    const nearPreview = computeInsertionPreview(
+      nearOverlap,
+      comp.x + comp.w * 0.74,
+      comp.y + comp.h * 0.5,
+      volume.books,
+      layout
+    )!;
+    const anchorRect = nearPreview.slotRects.get(anchor.id)!;
+    const nearRect = nearPreview.slotRects.get(nearOverlap.id)!;
+    expect(anchorRect.x).toBeGreaterThanOrEqual(comp.x);
+    expect(anchorRect.x + anchorRect.w).toBeLessThanOrEqual(comp.x + comp.w);
+    expect(nearRect.x + nearRect.w).toBeLessThanOrEqual(comp.x + comp.w);
+    const leftEdge = Math.min(anchorRect.x, nearRect.x);
+    const rightStart = Math.max(anchorRect.x, nearRect.x);
+    const leftWidth = anchorRect.x < nearRect.x ? anchorRect.w : nearRect.w;
+    expect(rightStart).toBeGreaterThan(leftEdge + leftWidth);
   });
 });

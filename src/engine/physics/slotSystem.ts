@@ -7,10 +7,13 @@ import {
 import type { BookModel } from '../../types/contracts';
 import {
   computeBookDimensions,
+  computeBookSlotNormX,
   computeBookSlotRects,
   computeDeskSpillTargets,
   getBookOrganicLeanRad,
+  resolveCompartmentNormX,
   type CompartmentRect,
+  type HorizontalSlotRequest,
   type Rect,
   type ShelfLayoutGeometry,
 } from '../layout/shelfLayout';
@@ -39,6 +42,7 @@ export interface InsertionPreview {
   readonly compartmentIndex: number;
   readonly insertIndex: number;
   readonly slotRects: Map<string, Rect>;
+  readonly slotNormX: Map<string, number>;
   readonly highlightRect: Rect;
 }
 
@@ -61,37 +65,44 @@ function computeSlotRectsWithPhantom(
   booksInCompartment: readonly BookModel[],
   candidateBook: BookModel,
   insertIndex: number,
+  desiredCandidateNormX: number,
   compartment: CompartmentRect
-): Map<string, Rect> {
+): { slotRects: Map<string, Rect>; slotNormX: Map<string, number> } {
   const ordered = [...booksInCompartment].sort(
     (a, b) =>
       (a.placement?.orderInCompartment ?? 0) - (b.placement?.orderInCompartment ?? 0)
   );
-  const clampedIdx = Math.max(0, Math.min(ordered.length, insertIndex));
-  ordered.splice(clampedIdx, 0, candidateBook);
+  const existingNormX = computeBookSlotNormX(ordered);
+  const requests: HorizontalSlotRequest[] = ordered.map((book) => ({
+    bookId: book.id,
+    widthNorm: BOOK_THICKNESS_RATIOS[book.thicknessTier],
+    desiredNormX: existingNormX.get(book.id) ?? COMPARTMENT_SIDE_MARGIN,
+  }));
 
-  const totalNormWidth =
-    ordered.reduce((sum, b) => sum + BOOK_THICKNESS_RATIOS[b.thicknessTier], 0) +
-    Math.max(0, ordered.length - 1) * BOOK_GAP_RATIO;
-  const startNormX =
-    COMPARTMENT_SIDE_MARGIN + Math.max(0, (COMPARTMENT_USABLE_WIDTH - totalNormWidth) * 0.5);
+  const clampedIdx = Math.max(0, Math.min(requests.length, insertIndex));
+  requests.splice(clampedIdx, 0, {
+    bookId: candidateBook.id,
+    widthNorm: BOOK_THICKNESS_RATIOS[candidateBook.thicknessTier],
+    desiredNormX: desiredCandidateNormX,
+  });
 
-  const result = new Map<string, Rect>();
-  let cursorX = compartment.x + startNormX * compartment.w;
-  const gapPx = BOOK_GAP_RATIO * compartment.w;
+  const slotNormX = resolveCompartmentNormX(requests);
+  const slotRects = new Map<string, Rect>();
+  const orderedWithCandidate = [...ordered];
+  orderedWithCandidate.splice(clampedIdx, 0, candidateBook);
 
-  for (const book of ordered) {
+  for (const book of orderedWithCandidate) {
+    const normX = slotNormX.get(book.id) ?? COMPARTMENT_SIDE_MARGIN;
     const { widthPx, heightPx } = computeBookDimensions(book, compartment);
-    result.set(book.id, {
-      x: cursorX,
+    slotRects.set(book.id, {
+      x: compartment.x + normX * compartment.w,
       y: compartment.y + compartment.h - heightPx - 1,
       w: widthPx,
       h: heightPx,
     });
-    cursorX += widthPx + gapPx;
   }
 
-  return result;
+  return { slotRects, slotNormX };
 }
 
 export function computeInsertionPreview(
@@ -125,6 +136,8 @@ export function computeInsertionPreview(
     return null;
   }
 
+  const candidateWidthNorm = BOOK_THICKNESS_RATIOS[draggedBook.thicknessTier];
+  const desiredNormX = (centerX - targetComp.x) / targetComp.w - candidateWidthNorm * 0.5;
   const baseRects = computeBookSlotRects(existing, targetComp);
   let insertIndex = 0;
   for (const book of existing) {
@@ -134,10 +147,11 @@ export function computeInsertionPreview(
     }
   }
 
-  const slotRects = computeSlotRectsWithPhantom(
+  const { slotRects, slotNormX } = computeSlotRectsWithPhantom(
     existing,
     draggedBook,
     insertIndex,
+    desiredNormX,
     targetComp
   );
   const highlightRect = slotRects.get(draggedBook.id);
@@ -147,6 +161,7 @@ export function computeInsertionPreview(
     compartmentIndex: targetComp.index,
     insertIndex,
     slotRects,
+    slotNormX,
     highlightRect,
   };
 }
@@ -155,12 +170,18 @@ export function commitBookPlacement(
   books: BookModel[],
   bookId: string,
   targetCompartmentIndex: number | null,
-  insertIndex = 0
+  insertIndex = 0,
+  resolvedNormX?: ReadonlyMap<string, number>
 ): void {
   const dragged = books.find((b) => b.id === bookId);
   if (!dragged) return;
 
   const prevCompIdx = dragged.placement?.compartmentIndex ?? null;
+  let prevCompNormX: Map<string, number> | null = null;
+  if (prevCompIdx !== null && prevCompIdx !== targetCompartmentIndex) {
+    const beforeRemoval = books.filter((b) => b.placement?.compartmentIndex === prevCompIdx);
+    prevCompNormX = computeBookSlotNormX(beforeRemoval);
+  }
   dragged.placement = null;
 
   if (prevCompIdx !== null && prevCompIdx !== targetCompartmentIndex) {
@@ -171,7 +192,12 @@ export function commitBookPlacement(
           (a.placement?.orderInCompartment ?? 0) - (b.placement?.orderInCompartment ?? 0)
       );
     oldSiblings.forEach((b, idx) => {
-      b.placement = { compartmentIndex: prevCompIdx, orderInCompartment: idx };
+      const preservedNormX = b.placement?.normX ?? prevCompNormX?.get(b.id);
+      b.placement = {
+        compartmentIndex: prevCompIdx,
+        orderInCompartment: idx,
+        ...(preservedNormX !== undefined ? { normX: preservedNormX } : {}),
+      };
     });
   }
 
@@ -188,7 +214,12 @@ export function commitBookPlacement(
   const clampedIdx = Math.max(0, Math.min(targetSiblings.length, insertIndex));
   targetSiblings.splice(clampedIdx, 0, dragged);
   targetSiblings.forEach((b, idx) => {
-    b.placement = { compartmentIndex: targetCompartmentIndex, orderInCompartment: idx };
+    const nextNormX = resolvedNormX?.get(b.id) ?? b.placement?.normX;
+    b.placement = {
+      compartmentIndex: targetCompartmentIndex,
+      orderInCompartment: idx,
+      ...(nextNormX !== undefined ? { normX: nextNormX } : {}),
+    };
   });
 }
 

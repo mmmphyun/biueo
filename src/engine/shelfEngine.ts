@@ -13,6 +13,7 @@ import type {
 } from '../types/contracts';
 import {
   computeBookDimensions,
+  computeBookSlotNormX,
   computeShelfLayout,
   getBookOrganicLeanRad,
   type Rect,
@@ -1045,6 +1046,22 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       if (!drag.isDraggingBook && dist >= 6) {
         drag.isDraggingBook = true;
         chaosWorld?.removeBody(targetBookId);
+        const grabbedBook = volume.books.find((b) => b.id === targetBookId);
+        if (grabbedBook?.placement) {
+          const compIdx = grabbedBook.placement.compartmentIndex;
+          const compBooks = volume.books.filter(
+            (b) => b.placement?.compartmentIndex === compIdx
+          );
+          if (compBooks.some((b) => typeof b.placement?.normX !== 'number')) {
+            const resolved = computeBookSlotNormX(compBooks);
+            for (const b of compBooks) {
+              const nx = resolved.get(b.id);
+              if (b.placement && nx !== undefined && typeof b.placement.normX !== 'number') {
+                b.placement.normX = nx;
+              }
+            }
+          }
+        }
         canvas.style.cursor = 'grabbing';
         refreshDrawOrder(targetBookId);
       }
@@ -1133,7 +1150,8 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
             volume.books,
             drag.bookId,
             insertionPreview.compartmentIndex,
-            insertionPreview.insertIndex
+            insertionPreview.insertIndex,
+            insertionPreview.slotNormX
           );
           pose.targetScale = 1;
           insertionPreview = null;
