@@ -19,11 +19,19 @@ export interface ChaosBodyPose {
 
 export type ChaosWorldMode = 'closed_shelf' | 'desk_spill' | 'desk_drop';
 
+interface SeatedShelfBook {
+  pose: ChaosBodySpawnPose;
+  readonly gripThreshold: number;
+  fatigue: number;
+  rattleAngleOffset: number;
+}
+
 const WALL_THICKNESS = 140;
 const FIXED_STEP_MS = 1000 / 120;
 const MAX_SUBSTEPS_PER_FRAME = 4;
 const MAX_BODY_SPEED = 28;
 const MAX_ANGULAR_SPEED = 0.35;
+const MAX_RELEASE_PER_FRAME = 4;
 const DESK_MARGIN_X = 18;
 const DESK_TOP_Y = 24;
 const DESK_BOTTOM_SAFE_PAD = 86;
@@ -51,6 +59,7 @@ export class ChaosWorld {
   private spillIsDesktop = true;
   private shelfClearRect: Rect | null = null;
   private readonly bodiesById = new Map<string, Matter.Body>();
+  private readonly seatedById = new Map<string, SeatedShelfBook>();
   private readonly bookMetaByBodyId = new Map<
     number,
     { readonly bookId: string; readonly minHalfExtent: number }
@@ -58,6 +67,7 @@ export class ChaosWorld {
   private walls: Matter.Body[] = [];
   private accumulatorMs = 0;
   private impulseCounter = 0;
+  private rattlePhase = 0;
   private onCollision?: (impactSpeed: number) => void;
   private readonly handleCollisionStart = (
     event: Matter.IEventCollision<Matter.Engine>
@@ -140,6 +150,61 @@ export class ChaosWorld {
       Matter.Body.setPosition(body, { x: nx, y: ny });
       this.clampBodyInsideBounds(body);
     }
+    for (const entry of this.seatedById.values()) {
+      entry.pose = {
+        ...entry.pose,
+        centerX: nextInnerRect.x + (entry.pose.centerX - prev.x) * scaleX,
+        centerY: nextInnerRect.y + (entry.pose.centerY - prev.y) * scaleY,
+      };
+    }
+  }
+
+  private createClosedBody(pose: ChaosBodySpawnPose): Matter.Body {
+    const body = Matter.Bodies.rectangle(
+      pose.centerX,
+      pose.centerY,
+      Math.max(8, pose.widthPx),
+      Math.max(16, pose.heightPx),
+      {
+        restitution: 0.24,
+        friction: 0.36,
+        frictionStatic: 0.45,
+        frictionAir: 0.016,
+        density: 0.0022,
+        chamfer: { radius: 2 },
+      }
+    );
+    Matter.Body.setAngle(body, pose.angleRad);
+    this.bodiesById.set(pose.bookId, body);
+    this.bookMetaByBodyId.set(body.id, {
+      bookId: pose.bookId,
+      minHalfExtent: Math.min(pose.widthPx, pose.heightPx) * 0.45,
+    });
+    this.clampBodyInsideBounds(body);
+    return body;
+  }
+
+  private spawnActiveClosedBody(
+    pose: ChaosBodySpawnPose,
+    vx = 0,
+    vy = 0,
+    angularVelocity = 0
+  ): Matter.Body {
+    const body = this.createClosedBody(pose);
+    Matter.Composite.add(this.engine.world, body);
+    Matter.Sleeping.set(body, false);
+
+    const speed = Math.hypot(vx, vy);
+    const scale = speed > MAX_BODY_SPEED ? MAX_BODY_SPEED / speed : 1;
+    Matter.Body.setVelocity(body, {
+      x: vx * scale,
+      y: vy * scale,
+    });
+    Matter.Body.setAngularVelocity(
+      body,
+      Math.max(-MAX_ANGULAR_SPEED, Math.min(MAX_ANGULAR_SPEED, angularVelocity))
+    );
+    return body;
   }
 
   spawnFromPoses(poses: readonly ChaosBodySpawnPose[]): void {
@@ -148,32 +213,12 @@ export class ChaosWorld {
     this.spillElapsedMs = 0;
     this.dropElapsedMs = 0;
     this.shelfClearRect = null;
+    this.engine.gravity.x = 0;
     this.engine.gravity.y = 1.35;
     const created: Matter.Body[] = [];
 
     for (const pose of poses) {
-      const body = Matter.Bodies.rectangle(
-        pose.centerX,
-        pose.centerY,
-        Math.max(8, pose.widthPx),
-        Math.max(16, pose.heightPx),
-        {
-          restitution: 0.24,
-          friction: 0.36,
-          frictionStatic: 0.45,
-          frictionAir: 0.016,
-          density: 0.0022,
-          chamfer: { radius: 2 },
-        }
-      );
-      Matter.Body.setAngle(body, pose.angleRad);
-      this.bodiesById.set(pose.bookId, body);
-      this.bookMetaByBodyId.set(body.id, {
-        bookId: pose.bookId,
-        minHalfExtent: Math.min(pose.widthPx, pose.heightPx) * 0.45,
-      });
-      this.clampBodyInsideBounds(body);
-      created.push(body);
+      created.push(this.createClosedBody(pose));
     }
 
     if (created.length > 0) {
@@ -181,11 +226,178 @@ export class ChaosWorld {
     }
   }
 
+  /**
+   * 직접 잡기 흔들기 시작 시 전권을 고정 슬롯 후보로 등록해 흔들림 세기에 맞춰 순차 이탈시킨다.
+   */
+  spawnSeatedPoses(poses: readonly ChaosBodySpawnPose[]): void {
+    this.clearBodies();
+    this.mode = 'closed_shelf';
+    this.spillElapsedMs = 0;
+    this.dropElapsedMs = 0;
+    this.shelfClearRect = null;
+    this.engine.gravity.x = 0;
+    this.engine.gravity.y = 1.35;
+    this.rattlePhase = 0;
+
+    const boundsTop = this.bounds.y;
+    const boundsH = Math.max(1, this.bounds.h);
+    const rand = mulberry32(3191 + poses.length * 41);
+
+    for (const pose of poses) {
+      const relY = Math.max(0, Math.min(1, (pose.centerY - boundsTop) / boundsH));
+      const gripThreshold = 0.28 + rand() * 0.64 + relY * 0.14;
+      this.seatedById.set(pose.bookId, {
+        pose: { ...pose },
+        gripThreshold,
+        fatigue: 0,
+        rattleAngleOffset: 0,
+      });
+    }
+  }
+
+  releaseAllSeatedBodies(): void {
+    if (this.seatedById.size === 0) return;
+    for (const entry of this.seatedById.values()) {
+      this.spawnActiveClosedBody(entry.pose);
+    }
+    this.seatedById.clear();
+  }
+
+  /**
+   * 책장 프레임 가속도 반대 관성력(-a)과 기울기 중력을 반영하고 고정 책들을 순차적으로 풀어낸다.
+   */
+  applyFrameShakeMotion(
+    accelX: number,
+    accelY: number,
+    velX: number,
+    velY: number,
+    tiltRad: number,
+    dtSec: number
+  ): number {
+    if (this.mode !== 'closed_shelf') return 0;
+    const dt = Math.min(0.05, Math.max(0.001, dtSec));
+
+    this.engine.gravity.x = 1.35 * Math.sin(tiltRad) * 1.45;
+    this.engine.gravity.y = 1.35 * Math.cos(tiltRad);
+
+    const clampedAx = Math.max(-18000, Math.min(18000, accelX));
+    const clampedAy = Math.max(-18000, Math.min(18000, accelY));
+    const accelMag = Math.hypot(clampedAx, clampedAy);
+    const shouldWake = accelMag > 650 || Math.abs(tiltRad) > 0.03;
+
+    for (const body of this.bodiesById.values()) {
+      if (shouldWake) {
+        Matter.Sleeping.set(body, false);
+      }
+      if (accelMag > 300) {
+        Matter.Body.applyForce(body, body.position, {
+          x: -clampedAx * 0.0000011 * body.mass,
+          y: -clampedAy * 0.00000095 * body.mass,
+        });
+      }
+    }
+
+    if (this.seatedById.size === 0) return 0;
+
+    const velMag = Math.hypot(velX, velY);
+    const shakeEnergy =
+      Math.max(0, accelMag - 900) / 13500 +
+      Math.max(0, velMag - 260) / 2100 +
+      Math.max(0, Math.abs(tiltRad) - 0.04) * 1.5;
+
+    this.rattlePhase += dt * 42;
+    if (shakeEnergy <= 0) {
+      const decay = Math.max(0, 1 - dt * 12);
+      for (const entry of this.seatedById.values()) {
+        entry.rattleAngleOffset *= decay;
+      }
+      return 0;
+    }
+
+    const boundsCx = this.bounds.x + this.bounds.w * 0.5;
+    const halfW = Math.max(1, this.bounds.w * 0.5);
+    const inertialDirX = clampedAx !== 0 ? -Math.sign(clampedAx) : 0;
+    const candidates: { bookId: string; excess: number; entry: SeatedShelfBook }[] = [];
+
+    for (const [bookId, entry] of this.seatedById) {
+      const relX = (entry.pose.centerX - boundsCx) / halfW;
+      let dirBonus = 0;
+      if (inertialDirX !== 0 && Math.sign(relX) === inertialDirX) {
+        dirBonus += Math.abs(relX) * 0.9;
+      }
+      if (clampedAy < -1100) {
+        dirBonus += 0.65;
+      }
+
+      entry.fatigue += shakeEnergy * dt * (2.8 + dirBonus);
+      const progress = Math.min(1, entry.fatigue / entry.gripThreshold);
+      entry.rattleAngleOffset =
+        Math.sin(this.rattlePhase + entry.pose.centerX * 0.07) * progress * 0.085;
+
+      if (entry.fatigue >= entry.gripThreshold) {
+        candidates.push({
+          bookId,
+          excess: entry.fatigue - entry.gripThreshold,
+          entry,
+        });
+      }
+    }
+
+    if (candidates.length === 0) return 0;
+
+    candidates.sort((a, b) => b.excess - a.excess);
+    const releaseCount = Math.min(MAX_RELEASE_PER_FRAME, candidates.length);
+    this.impulseCounter += 1;
+    const rand = mulberry32(5521 + this.impulseCounter * 83);
+
+    for (let i = 0; i < releaseCount; i += 1) {
+      const { bookId, entry } = candidates[i];
+      this.seatedById.delete(bookId);
+      const releaseVx = Math.max(
+        -10,
+        Math.min(10, -clampedAx * 0.00045 - velX * 0.0022 + (rand() - 0.5) * 2.2)
+      );
+      const releaseVy = Math.max(
+        -5,
+        Math.min(10, -clampedAy * 0.00035 + 1.5 + rand() * 2.0)
+      );
+      const spinSign = inertialDirX !== 0 ? inertialDirX : rand() < 0.5 ? -1 : 1;
+      const releaseAng = Math.max(
+        -0.25,
+        Math.min(0.25, spinSign * (0.04 + rand() * 0.08))
+      );
+      this.spawnActiveClosedBody(entry.pose, releaseVx, releaseVy, releaseAng);
+    }
+
+    return releaseCount;
+  }
+
+  getSeatedCount(): number {
+    return this.seatedById.size;
+  }
+
+  getDislodgedCount(): number {
+    return this.bodiesById.size;
+  }
+
+  getSeatedPoses(): Map<string, ChaosBodyPose> {
+    const out = new Map<string, ChaosBodyPose>();
+    for (const [bookId, entry] of this.seatedById) {
+      out.set(bookId, {
+        x: entry.pose.centerX,
+        y: entry.pose.centerY,
+        angle: entry.pose.angleRad + entry.rattleAngleOffset,
+      });
+    }
+    return out;
+  }
+
   private clearBodies(): void {
     if (this.bodiesById.size > 0) {
       Matter.Composite.remove(this.engine.world, Array.from(this.bodiesById.values()));
     }
     this.bodiesById.clear();
+    this.seatedById.clear();
     this.bookMetaByBodyId.clear();
   }
 
@@ -243,10 +455,12 @@ export class ChaosWorld {
     isDesktop: boolean
   ): void {
     this.mode = 'desk_spill';
+    this.seatedById.clear();
     this.spillElapsedMs = 0;
     this.spillIsDesktop = isDesktop;
     this.shelfClearRect = frameRect;
     this.accumulatorMs = 0;
+    this.engine.gravity.x = 0;
     this.engine.gravity.y = 1.42;
 
     const deskBounds = computeDeskSafeBounds(viewportW, viewportH);
