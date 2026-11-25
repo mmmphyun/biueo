@@ -323,7 +323,8 @@ export function drawBrassLatch(
   layout: ShelfLayoutGeometry,
   isDoorOpen: boolean,
   isHovered: boolean,
-  wiggleAngleRad = 0
+  wiggleAngleRad = 0,
+  glintStrength = 0
 ): void {
   const { frameRect, frameBorderPx, latchHitRect } = layout;
   const cx = frameRect.x + frameRect.w - frameBorderPx * 0.42;
@@ -333,6 +334,16 @@ export function drawBrassLatch(
 
   ctx.save();
   ctx.translate(cx, cy);
+  if (glintStrength > 0.01) {
+    const glowR = barW * (1.15 + glintStrength * 0.45);
+    const grad = ctx.createRadialGradient(0, 0, 1, 0, 0, glowR);
+    grad.addColorStop(0, `rgba(255, 246, 210, ${(glintStrength * 0.62).toFixed(3)})`);
+    grad.addColorStop(1, 'rgba(255, 246, 210, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, glowR, 0, Math.PI * 2);
+    ctx.fill();
+  }
   if (isHovered) {
     ctx.scale(1.08, 1.08);
   }

@@ -115,7 +115,10 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   let shakeDirSign = 1;
   let shakeSessionCounter = 0;
   let latchWiggleTimer = 0;
+  let latchGlintTimer = 0;
   let completionGlowTimer = 0;
+  let hasUserInteracted = false;
+  let idleCueTimeoutId: number | null = null;
 
   let spaceHeld = false;
   let spacePulseTimerMs = 0;
@@ -128,6 +131,14 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   const prefersReducedMotion = () =>
     typeof window !== 'undefined' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const markUserInteracted = () => {
+    hasUserInteracted = true;
+    if (idleCueTimeoutId !== null) {
+      window.clearTimeout(idleCueTimeoutId);
+      idleCueTimeoutId = null;
+    }
+  };
 
   const cloneBooksForCommit = (): BookModel[] => {
     if (!volume) return [];
@@ -200,9 +211,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
         chaosWorld.updateBounds(nextLayout.innerRect);
       }
     }
-    if (shelfState === 'LOCKED_NEAT') {
-      poses = buildNeatPoses(volume.books, nextLayout);
-    } else if (shelfState === 'OPEN_TIDYING') {
+    if (shelfState === 'LOCKED_NEAT' || shelfState === 'OPEN_TIDYING') {
       if (poses.size === 0) {
         poses = buildNeatPoses(volume.books, nextLayout);
       } else if (!isSpillingToDesk) {
@@ -217,6 +226,10 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
               if (!pose) continue;
               pose.targetX *= sx;
               pose.targetY *= sy;
+              if (shelfState === 'LOCKED_NEAT') {
+                pose.x = pose.targetX;
+                pose.y = pose.targetY;
+              }
             }
           }
         }
@@ -442,7 +455,9 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
 
       const wiggleAngle =
         latchWiggleTimer > 0 ? Math.sin(latchWiggleTimer * 42) * 0.22 * (latchWiggleTimer / 0.35) : 0;
-      drawBrassLatch(ctx, layout, isDoorOpen, latchHovered, wiggleAngle);
+      const glintStrength =
+        latchGlintTimer > 0 ? Math.sin((latchGlintTimer / 0.9) * Math.PI) : 0;
+      drawBrassLatch(ctx, layout, isDoorOpen, latchHovered, wiggleAngle, glintStrength);
 
       // 정돈 완료 크림빛 숨결 글로우 (Tier 0, 0.45s)
       if (completionGlowTimer > 0) {
@@ -489,8 +504,18 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       shelfSprites.logicalW,
       shelfSprites.logicalH
     );
-    drawBrassLatch(ctx, layout, false, latchHovered, 0);
-    ctx.restore();
+    const chaosGlint =
+      latchGlintTimer > 0 ? Math.sin((latchGlintTimer / 0.9) * Math.PI) : 0;
+    drawBrassLatch(ctx, layout, false, latchHovered, 0, chaosGlint);
+    ctx.restore(); // frameShake 해제 후 데스크 위 미배치 책은 고정 좌표에 그린다.
+
+    for (const book of volume.books) {
+      if (book.placement !== null) continue;
+      const pose = poses.get(book.id);
+      if (!pose) continue;
+      drawBookPose(ctx, pose, false, false, false, theme.shadow);
+    }
+
     ctx.restore();
   };
 
@@ -582,6 +607,11 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
 
     if (latchWiggleTimer > 0) {
       latchWiggleTimer = Math.max(0, latchWiggleTimer - dtSec);
+      keepAnimating = true;
+    }
+
+    if (latchGlintTimer > 0) {
+      latchGlintTimer = Math.max(0, latchGlintTimer - dtSec);
       keepAnimating = true;
     }
 
@@ -687,39 +717,42 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       }
     }
 
-    return volume.books.map((book) => {
-      const pose = poses.get(book.id);
-      const dims = computeBookDimensions(book, refComp);
-      const compIdx = book.placement?.compartmentIndex;
-      const compRect = compIdx !== undefined ? layout!.compartments[compIdx] : undefined;
-      const uprightRect = uprightRectById.get(book.id);
+    return volume.books
+      .filter((book) => book.placement !== null)
+      .map((book) => {
+        const pose = poses.get(book.id);
+        const dims = computeBookDimensions(book, refComp);
+        const compIdx = book.placement?.compartmentIndex;
+        const compRect = compIdx !== undefined ? layout!.compartments[compIdx] : undefined;
+        const uprightRect = uprightRectById.get(book.id);
 
-      return {
-        bookId: book.id,
-        centerX:
-          uprightRect
-            ? uprightRect.x + uprightRect.w * 0.5
-            : (pose?.x ?? layout!.innerRect.x + layout!.innerRect.w * 0.5),
-        centerY:
-          uprightRect
-            ? uprightRect.y + uprightRect.h * 0.5
-            : (pose?.y ?? layout!.innerRect.y + layout!.innerRect.h * 0.5),
-        widthPx: uprightRect?.w ?? pose?.widthPx ?? dims.widthPx,
-        heightPx: uprightRect?.h ?? pose?.heightPx ?? dims.heightPx,
-        angleRad: pose?.angle ?? getBookOrganicLeanRad(book.seed),
-        ...(compIdx !== undefined && compRect
-          ? { compartmentIndex: compIdx, compartmentRect: compRect }
-          : {}),
-        ...(book.placement?.fallenDir !== undefined
-          ? { fallenDir: book.placement.fallenDir }
-          : {}),
-      };
-    });
+        return {
+          bookId: book.id,
+          centerX:
+            uprightRect
+              ? uprightRect.x + uprightRect.w * 0.5
+              : (pose?.x ?? layout!.innerRect.x + layout!.innerRect.w * 0.5),
+          centerY:
+            uprightRect
+              ? uprightRect.y + uprightRect.h * 0.5
+              : (pose?.y ?? layout!.innerRect.y + layout!.innerRect.h * 0.5),
+          widthPx: uprightRect?.w ?? pose?.widthPx ?? dims.widthPx,
+          heightPx: uprightRect?.h ?? pose?.heightPx ?? dims.heightPx,
+          angleRad: pose?.angle ?? getBookOrganicLeanRad(book.seed),
+          ...(compIdx !== undefined && compRect
+            ? { compartmentIndex: compIdx, compartmentRect: compRect }
+            : {}),
+          ...(book.placement?.fallenDir !== undefined
+            ? { fallenDir: book.placement.fallenDir }
+            : {}),
+        };
+      });
   };
 
   const enterChaosAndShake = (vx: number, vy: number) => {
     if (!volume || !layout) return;
     if (shelfState !== 'LOCKED_NEAT' && shelfState !== 'SHAKING_CHAOS') return;
+    markUserInteracted();
 
     if (shelfState === 'LOCKED_NEAT') {
       shakeSessionCounter += 1;
@@ -739,6 +772,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   };
 
   const triggerShake = (intensity = 0.8) => {
+    markUserInteracted();
     shakeDirSign = -shakeDirSign;
     const clamped = Math.max(0.3, Math.min(1.0, intensity));
     enterChaosAndShake(shakeDirSign * 11 * clamped, -6 * clamped);
@@ -746,12 +780,17 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
 
   const toggleDoor = () => {
     if (!volume || !layout) return;
+    markUserInteracted();
 
     if (shelfState === 'LOCKED_NEAT') {
-      // 정돈 상태에서 열면 책들은 제자리에 머문다.
+      // 닫힌 상태에서 열 때는 데스크에 남아있던 책들의 좌표를 보존한 채 문만 연다.
       shelfState = 'OPEN_TIDYING';
-      poses = buildNeatPoses(volume.books, layout);
-      drawOrderIds = volume.books.map((b) => b.id);
+      if (poses.size === 0) {
+        poses = buildNeatPoses(volume.books, layout);
+      } else {
+        syncTargetsFromPlacements(volume.books, poses, layout, null, null);
+      }
+      refreshDrawOrder();
       emitSnapshot();
       requestRedraw();
       return;
@@ -760,6 +799,14 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     if (shelfState === 'SHAKING_CHAOS') {
       frameTargetX = 0;
       frameTargetY = 0;
+      const alreadyUnplacedPoses = new Map<string, KinematicBookPose>();
+      for (const book of volume.books) {
+        if (book.placement !== null) continue;
+        const existingPose = poses.get(book.id);
+        if (existingPose) {
+          alreadyUnplacedPoses.set(book.id, { ...existingPose });
+        }
+      }
       const tippedDirs = chaosWorld?.getTippedDirections() ?? new Map<string, -1 | 1>();
 
       // 이탈한 책은 먼저 배치를 비우고, 칸에 남은 책 중 쓰러진 책은 fallenDir를 기록한다.
@@ -774,14 +821,18 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
         }
       }
 
-      // 살짝만 흔들어 실제 이탈한 책이 0권이면 칸 내부 상태(쓰러짐 포함)를 유지한 채 문을 연다.
+      // 살짝만 흔들어 실제 이탈한 책이 0권이면 칸 내부 상태(쓰러짐 포함)와 기존 데스크 책을 유지한 채 문을 연다.
       if (!chaosWorld || chaosWorld.getDislodgedCount() === 0) {
         chaosWorld?.dispose();
         chaosWorld = null;
         isSpillingToDesk = false;
         shelfState = 'OPEN_TIDYING';
-        poses = buildNeatPoses(volume.books, layout);
-        drawOrderIds = volume.books.map((b) => b.id);
+        const nextPoses = buildNeatPoses(volume.books, layout);
+        for (const [id, preserved] of alreadyUnplacedPoses) {
+          nextPoses.set(id, preserved);
+        }
+        poses = nextPoses;
+        refreshDrawOrder();
         if (tippedDirs.size > 0) {
           callbacks.onShelfCommit(cloneBooksForCommit());
         }
@@ -790,9 +841,12 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
         return;
       }
 
-      // 흔들려 풀린 책만 데스크 여백으로 쏟아지고 칸에 남은 책(기립/쓰러짐)은 자기 자리에 머문다.
+      // 흔들려 풀린 책만 데스크 여백으로 쏟아지고, 칸에 남은 책과 기존 데스크 책은 제자리에 머문다.
       const refComp = layout.compartments[0];
       const nextPoses = buildNeatPoses(volume.books, layout);
+      for (const [id, preserved] of alreadyUnplacedPoses) {
+        nextPoses.set(id, preserved);
+      }
       const preSpillPoses = chaosWorld.getBodyPoses();
       for (const book of volume.books) {
         if (!chaosWorld.hasBody(book.id)) continue;
@@ -854,12 +908,6 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
 
     if (shelfState === 'OPEN_TIDYING') {
       const hasUnplaced = volume.books.some((b) => b.placement === null);
-      if (hasUnplaced) {
-        // 아직 책상 위에 책이 남아 있으면 부드러운 걸쇠 흔들림만 표시한다 (오답 버저 없음).
-        latchWiggleTimer = 0.35;
-        requestRedraw();
-        return;
-      }
 
       isSpillingToDesk = false;
       chaosWorld?.dispose();
@@ -869,10 +917,14 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       insertionPreview = null;
       hoveredBookId = null;
       syncTargetsFromPlacements(volume.books, poses, layout, null, null);
-      completionGlowTimer = 0.45;
+      if (!hasUnplaced) {
+        completionGlowTimer = 0.45;
+      }
       callbacks.onShelfCommit(cloneBooksForCommit());
       emitSnapshot();
-      callbacks.onTidyComplete([]);
+      if (!hasUnplaced) {
+        callbacks.onTidyComplete([]);
+      }
       requestRedraw();
     }
   };
@@ -973,13 +1025,20 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
 
   const handlePointerDown = (e: PointerEvent) => {
     if (!canvas || !layout || !volume) return;
+    markUserInteracted();
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
 
-    // 1. 황동 걸쇠 클릭 우선 처리
+    // 1. 황동 걸쇠 클릭 우선 처리 (손 커서 유지)
     if (pointInRect(px, py, layout.latchHitRect)) {
+      canvas.style.cursor = 'grabbing';
       toggleDoor();
+      window.setTimeout(() => {
+        if (canvas && !activeDrag && latchHovered) {
+          canvas.style.cursor = 'grab';
+        }
+      }, 120);
       return;
     }
 
@@ -1021,6 +1080,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       if (!pose) return;
 
       canvas.setPointerCapture(e.pointerId);
+      canvas.style.cursor = 'grabbing';
       activeDrag = {
         pointerId: e.pointerId,
         pointerType: e.pointerType,
@@ -1054,16 +1114,18 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
         refreshDrawOrder();
         nextBook = pickBookAtPoint(px, py, e.pointerType, poses, drawOrderIds);
       }
-      if (nextLatch !== latchHovered || nextBook !== hoveredBookId) {
+      const onClosedFrame =
+        (shelfState === 'LOCKED_NEAT' || shelfState === 'SHAKING_CHAOS') &&
+        pointInRect(px, py, layout.frameRect);
+      const nextCursor = nextLatch || nextBook || onClosedFrame ? 'grab' : 'default';
+      if (
+        nextLatch !== latchHovered ||
+        nextBook !== hoveredBookId ||
+        canvas.style.cursor !== nextCursor
+      ) {
         latchHovered = nextLatch;
         hoveredBookId = nextBook;
-        canvas.style.cursor = nextLatch
-          ? 'pointer'
-          : nextBook
-            ? 'grab'
-            : shelfState === 'LOCKED_NEAT' || shelfState === 'SHAKING_CHAOS'
-              ? 'grab'
-              : 'default';
+        canvas.style.cursor = nextCursor;
         requestRedraw();
       }
       return;
@@ -1172,7 +1234,9 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     if (drag.mode === 'frame_shake') {
       frameTargetX = 0;
       frameTargetY = 0;
-      canvas.style.cursor = 'grab';
+      const onGrabZone =
+        pointInRect(px, py, layout.frameRect) || pointInRect(px, py, layout.latchHitRect);
+      canvas.style.cursor = onGrabZone ? 'grab' : 'default';
       requestRedraw();
       return;
     }
@@ -1180,12 +1244,14 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     if (drag.mode === 'book_candidate' && drag.bookId) {
       if (!drag.isDraggingBook) {
         const duration = performance.now() - drag.downTimeMs;
+        canvas.style.cursor = hoveredBookId === drag.bookId ? 'grab' : 'default';
         if (isShortTap(drag.downX, drag.downY, px, py, duration)) {
           callbacks.onBookTap(drag.bookId);
         }
         return;
       }
 
+      const wasAllShelvedBefore = volume.books.every((b) => b.placement !== null);
       const pose = poses.get(drag.bookId);
       const book = volume.books.find((b) => b.id === drag.bookId);
       if (pose && book) {
@@ -1218,7 +1284,14 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       }
 
       refreshDrawOrder();
-      canvas.style.cursor = 'grab';
+      const stillOnBook = pickBookAtPoint(px, py, e.pointerType, poses, drawOrderIds);
+      hoveredBookId = stillOnBook;
+      canvas.style.cursor =
+        stillOnBook || pointInRect(px, py, layout.latchHitRect) ? 'grab' : 'default';
+      if (!wasAllShelvedBefore && volume.books.every((b) => b.placement !== null)) {
+        latchWiggleTimer = 0.35;
+        latchGlintTimer = 0.9;
+      }
       callbacks.onShelfCommit(cloneBooksForCommit());
       emitSnapshot();
       requestRedraw();
@@ -1235,13 +1308,24 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.code !== 'Space') return;
     const tag = (e.target as HTMLElement | null)?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'SELECT') return;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'SELECT' || tag === 'A') {
+      return;
+    }
     if (document.querySelector('dialog[open]')) return;
+
+    if (e.code === 'Enter') {
+      e.preventDefault();
+      markUserInteracted();
+      toggleDoor();
+      return;
+    }
+
+    if (e.code !== 'Space') return;
     if (shelfState !== 'LOCKED_NEAT' && shelfState !== 'SHAKING_CHAOS') return;
 
     e.preventDefault();
+    markUserInteracted();
     if (!spaceHeld) {
       spaceHeld = true;
       spacePulseTimerMs = 0;
@@ -1329,9 +1413,23 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     handleResize();
     refreshDrawOrder();
     emitSnapshot();
+
+    idleCueTimeoutId = window.setTimeout(() => {
+      idleCueTimeoutId = null;
+      if (paused || hasUserInteracted || shelfState !== 'LOCKED_NEAT' || prefersReducedMotion()) {
+        return;
+      }
+      frameShakeVx += 38;
+      latchGlintTimer = 0.9;
+      requestRedraw();
+    }, 2500);
   };
 
   const unmount = () => {
+    if (idleCueTimeoutId !== null) {
+      window.clearTimeout(idleCueTimeoutId);
+      idleCueTimeoutId = null;
+    }
     resizeObserver?.disconnect();
     resizeObserver = null;
     if (canvas) {
@@ -1373,6 +1471,13 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   };
 
   const loadVolume = (nextVolume: ShelfVolume) => {
+    if (idleCueTimeoutId !== null) {
+      window.clearTimeout(idleCueTimeoutId);
+      idleCueTimeoutId = null;
+    }
+    hasUserInteracted = false;
+    latchGlintTimer = 0;
+    latchWiggleTimer = 0;
     isSpillingToDesk = false;
     frameTargetX = 0;
     frameTargetY = 0;
