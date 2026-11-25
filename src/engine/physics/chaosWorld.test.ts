@@ -379,3 +379,111 @@ describe('ChaosWorld direct grab non-inertial shaking & progressive dislodge', (
     fullWorld.dispose();
   });
 });
+
+function createSpawnListWithCompartments(
+  viewportW: number,
+  viewportH: number,
+  preset: '3x3' | '5x3'
+) {
+  const { volume, layout, spawns } = createSpawnList(viewportW, viewportH, preset);
+  const compSpawns = spawns.map((sp, idx) => {
+    const compIdx = volume.books[idx].placement!.compartmentIndex;
+    return {
+      ...sp,
+      compartmentIndex: compIdx,
+      compartmentRect: layout.compartments[compIdx],
+    };
+  });
+  return { volume, layout, spawns: compSpawns };
+}
+
+function getRotatedCorners(x: number, y: number, w: number, h: number, angle: number) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const hw = w * 0.5;
+  const hh = h * 0.5;
+  return [
+    { x: x + (-hw * cos - -hh * sin), y: y + (-hw * sin + -hh * cos) },
+    { x: x + (hw * cos - -hh * sin), y: y + (hw * sin + -hh * cos) },
+    { x: x + (hw * cos - hh * sin), y: y + (hw * sin + hh * cos) },
+    { x: x + (-hw * cos - hh * sin), y: y + (-hw * sin + hh * cos) },
+  ];
+}
+
+describe('ChaosWorld 2.5D depth & Tip vs Slip physics', () => {
+  it('tips slender exposed books inside compartment bounds while dislodging others under frame shake', () => {
+    for (const preset of ['3x3', '5x3'] as const) {
+      const { volume, layout, spawns } = createSpawnListWithCompartments(1440, 900, preset);
+      const world = new ChaosWorld(layout.innerRect);
+      world.spawnSeatedPoses(spawns, 2);
+
+      for (let f = 0; f < 22; f += 1) {
+        const sign = f % 4 < 2 ? 1 : -1;
+        world.applyFrameShakeMotion(sign * 10500, -900, sign * 780, -60, sign * 0.085, 1 / 60);
+        world.step(16.67);
+      }
+
+      // 쓰러짐 보간이 완전히 정착할 때까지 진행
+      for (let f = 0; f < 30; f += 1) {
+        world.step(16.67);
+      }
+
+      expect(world.getTippedCount()).toBeGreaterThan(0);
+      expect(world.getDislodgedCount()).toBeGreaterThan(0);
+      expect(world.getSeatedCount() + world.getDislodgedCount()).toBe(volume.books.length);
+
+      const tippedDirs = world.getTippedDirections();
+      const seatedPoses = world.getSeatedPoses();
+      const refComp = layout.compartments[0];
+
+      for (const [bookId] of tippedDirs) {
+        const book = volume.books.find((b) => b.id === bookId)!;
+        const comp = layout.compartments[book.placement!.compartmentIndex];
+        const pose = seatedPoses.get(bookId)!;
+        const dims = computeBookDimensions(book, refComp);
+        const corners = getRotatedCorners(
+          pose.x,
+          pose.y,
+          dims.widthPx,
+          dims.heightPx,
+          pose.angle
+        );
+
+        for (const pt of corners) {
+          expect(pt.x).toBeGreaterThanOrEqual(comp.x - 0.5);
+          expect(pt.x).toBeLessThanOrEqual(comp.x + comp.w + 0.5);
+          expect(pt.y).toBeGreaterThanOrEqual(comp.y - 0.5);
+          expect(pt.y).toBeLessThanOrEqual(comp.y + comp.h + 0.5);
+        }
+      }
+
+      world.dispose();
+    }
+  });
+
+  it('produces mixed tipped and dislodged books on applyButtonShakeBurst and ejects tipped books under repeated bursts', () => {
+    const { volume, layout, spawns } = createSpawnListWithCompartments(1440, 900, '3x3');
+    const world = new ChaosWorld(layout.innerRect);
+    world.spawnSeatedPoses(spawns, 3);
+
+    world.applyButtonShakeBurst(8.8, -4.8);
+    for (let f = 0; f < 30; f += 1) {
+      world.step(16.67);
+    }
+
+    const firstBurstTipped = world.getTippedCount();
+    const firstBurstDislodged = world.getDislodgedCount();
+    expect(firstBurstTipped).toBeGreaterThan(0);
+    expect(firstBurstDislodged).toBeGreaterThan(0);
+
+    for (let b = 0; b < 8; b += 1) {
+      const dir = b % 2 === 0 ? -1 : 1;
+      world.applyButtonShakeBurst(dir * 10.5, -5.8);
+      world.step(16.67);
+    }
+
+    expect(world.getDislodgedCount()).toBeGreaterThan(firstBurstDislodged);
+    expect(world.getSeatedCount()).toBeLessThan(volume.books.length - firstBurstDislodged);
+    world.dispose();
+  });
+});

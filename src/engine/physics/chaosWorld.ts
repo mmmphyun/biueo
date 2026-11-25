@@ -1,5 +1,9 @@
 import Matter from 'matter-js';
-import type { Rect } from '../layout/shelfLayout';
+import {
+  computeMaxTipAngleRad,
+  computeTippedBookTransform,
+  type Rect,
+} from '../layout/shelfLayout';
 import { mulberry32 } from '../textures/gouachePath';
 
 export interface ChaosBodySpawnPose {
@@ -9,21 +13,31 @@ export interface ChaosBodySpawnPose {
   readonly widthPx: number;
   readonly heightPx: number;
   readonly angleRad: number;
+  readonly compartmentIndex?: number;
+  readonly compartmentRect?: Rect;
+  readonly fallenDir?: -1 | 1;
 }
 
 export interface ChaosBodyPose {
   readonly x: number;
   readonly y: number;
   readonly angle: number;
+  readonly depthZ?: number;
 }
 
 export type ChaosWorldMode = 'closed_shelf' | 'desk_spill' | 'desk_drop';
 
 interface SeatedShelfBook {
   pose: ChaosBodySpawnPose;
-  readonly gripThreshold: number;
-  fatigue: number;
+  readonly aspectRatio: number;
+  readonly mu: number;
+  depthZ: number;
+  tipProgress: number;
   rattleAngleOffset: number;
+  state: 'upright' | 'tipped';
+  tipDir: -1 | 1;
+  tipAngleAbs: number;
+  targetTipAngleAbs: number;
 }
 
 const WALL_THICKNESS = 140;
@@ -32,6 +46,9 @@ const MAX_SUBSTEPS_PER_FRAME = 4;
 const MAX_BODY_SPEED = 28;
 const MAX_ANGULAR_SPEED = 0.35;
 const MAX_RELEASE_PER_FRAME = 4;
+const G_REF = 14000;
+const MAX_TIPPED_PER_COMPARTMENT = 2;
+const TIPPED_EJECT_DEPTH_Z = 1.32;
 const DESK_MARGIN_X = 18;
 const DESK_TOP_Y = 24;
 const DESK_BOTTOM_SAFE_PAD = 86;
@@ -40,6 +57,10 @@ const CLEAR_FORCE_END_MS = 620;
 const SETTLE_RAMP_END_MS = 1600;
 const MAX_SPILL_MS = 2400;
 const MAX_DROP_MS = 2400;
+
+function clampValue(val: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, val));
+}
 
 export function computeDeskSafeBounds(viewportW: number, viewportH: number): Rect {
   return {
@@ -151,10 +172,21 @@ export class ChaosWorld {
       this.clampBodyInsideBounds(body);
     }
     for (const entry of this.seatedById.values()) {
+      const scaledComp = entry.pose.compartmentRect
+        ? {
+            x: nextInnerRect.x + (entry.pose.compartmentRect.x - prev.x) * scaleX,
+            y: nextInnerRect.y + (entry.pose.compartmentRect.y - prev.y) * scaleY,
+            w: entry.pose.compartmentRect.w * scaleX,
+            h: entry.pose.compartmentRect.h * scaleY,
+          }
+        : undefined;
       entry.pose = {
         ...entry.pose,
         centerX: nextInnerRect.x + (entry.pose.centerX - prev.x) * scaleX,
         centerY: nextInnerRect.y + (entry.pose.centerY - prev.y) * scaleY,
+        widthPx: entry.pose.widthPx * scaleX,
+        heightPx: entry.pose.heightPx * scaleY,
+        compartmentRect: scaledComp,
       };
     }
   }
@@ -227,9 +259,9 @@ export class ChaosWorld {
   }
 
   /**
-   * 직접 잡기 흔들기 시작 시 전권을 고정 슬롯 후보로 등록해 흔들림 세기에 맞춰 순차 이탈시킨다.
+   * 2.5D 깊이 변수(depthZ)와 종횡비 기반 전도-미끄러짐 경쟁 후보로 책들을 등록한다.
    */
-  spawnSeatedPoses(poses: readonly ChaosBodySpawnPose[]): void {
+  spawnSeatedPoses(poses: readonly ChaosBodySpawnPose[], sessionSeed = 1): void {
     this.clearBodies();
     this.mode = 'closed_shelf';
     this.spillElapsedMs = 0;
@@ -239,32 +271,153 @@ export class ChaosWorld {
     this.engine.gravity.y = 1.35;
     this.rattlePhase = 0;
 
-    const boundsTop = this.bounds.y;
-    const boundsH = Math.max(1, this.bounds.h);
-    const rand = mulberry32(3191 + poses.length * 41);
+    const rand = mulberry32(3191 + poses.length * 41 + Math.floor(sessionSeed) * 137);
 
     for (const pose of poses) {
-      const relY = Math.max(0, Math.min(1, (pose.centerY - boundsTop) / boundsH));
-      const gripThreshold = 0.28 + rand() * 0.64 + relY * 0.14;
+      const aspectRatio = pose.widthPx / Math.max(1, pose.heightPx);
+      const gripRand = rand();
+      const mu = 0.16 + gripRand * 0.28;
+      const depthZ = 0.05 + (1 - gripRand) * 0.36 + rand() * 0.15;
+      const isAlreadyTipped = pose.fallenDir === -1 || pose.fallenDir === 1;
+      const initialAngleAbs = isAlreadyTipped ? Math.abs(pose.angleRad) : 0;
+
       this.seatedById.set(pose.bookId, {
         pose: { ...pose },
-        gripThreshold,
-        fatigue: 0,
+        aspectRatio,
+        mu,
+        depthZ,
+        tipProgress: isAlreadyTipped ? 1 : 0,
         rattleAngleOffset: 0,
+        state: isAlreadyTipped ? 'tipped' : 'upright',
+        tipDir: isAlreadyTipped ? pose.fallenDir! : 1,
+        tipAngleAbs: initialAngleAbs,
+        targetTipAngleAbs: initialAngleAbs,
       });
     }
   }
 
   releaseAllSeatedBodies(): void {
     if (this.seatedById.size === 0) return;
-    for (const entry of this.seatedById.values()) {
-      this.spawnActiveClosedBody(entry.pose);
+    for (const [bookId, entry] of this.seatedById) {
+      this.spawnActiveClosedBody(this.resolveSpawnPoseForEntry(bookId, entry));
     }
     this.seatedById.clear();
   }
 
+  private getUprightRectForEntry(entry: SeatedShelfBook): Rect {
+    return {
+      x: entry.pose.centerX - entry.pose.widthPx * 0.5,
+      y: entry.pose.centerY - entry.pose.heightPx * 0.5,
+      w: entry.pose.widthPx,
+      h: entry.pose.heightPx,
+    };
+  }
+
+  private resolveSpawnPoseForEntry(_bookId: string, entry: SeatedShelfBook): ChaosBodySpawnPose {
+    if (entry.state !== 'tipped') {
+      return entry.pose;
+    }
+    const tf = computeTippedBookTransform(
+      this.getUprightRectForEntry(entry),
+      entry.tipDir,
+      entry.tipAngleAbs
+    );
+    return {
+      ...entry.pose,
+      centerX: tf.centerX,
+      centerY: tf.centerY,
+      angleRad: tf.angleRad,
+    };
+  }
+
+  private resolveTipOption(
+    bookId: string,
+    entry: SeatedShelfBook,
+    preferredDir: -1 | 1
+  ): { readonly dir: -1 | 1; readonly targetAngleAbs: number } | null {
+    const compRect = entry.pose.compartmentRect;
+    const compIdx = entry.pose.compartmentIndex;
+    if (!compRect || compIdx === undefined) return null;
+
+    let tippedCountInComp = 0;
+    const siblings: { id: string; entry: SeatedShelfBook; rect: Rect }[] = [];
+    for (const [sibId, sibEntry] of this.seatedById) {
+      if (sibEntry.pose.compartmentIndex !== compIdx) continue;
+      if (sibEntry.state === 'tipped') tippedCountInComp += 1;
+      siblings.push({
+        id: sibId,
+        entry: sibEntry,
+        rect: this.getUprightRectForEntry(sibEntry),
+      });
+    }
+    if (tippedCountInComp >= MAX_TIPPED_PER_COMPARTMENT) return null;
+
+    const myRect = this.getUprightRectForEntry(entry);
+    const dirs: readonly (-1 | 1)[] = [preferredDir, (preferredDir === 1 ? -1 : 1) as -1 | 1];
+
+    for (const dir of dirs) {
+      let stopWallX = dir === 1 ? compRect.x + compRect.w : compRect.x;
+      let nearestSameDirTipped: { dist: number; targetAngleAbs: number; edgeX: number } | null =
+        null;
+
+      for (const sib of siblings) {
+        if (sib.id === bookId) continue;
+        if (dir === 1) {
+          if (sib.rect.x < myRect.x + myRect.w - 1) continue;
+          const dist = sib.rect.x - (myRect.x + myRect.w);
+          if (sib.entry.state === 'upright') {
+            stopWallX = Math.min(stopWallX, sib.rect.x);
+          } else if (sib.entry.tipDir === -1) {
+            stopWallX = Math.min(stopWallX, (myRect.x + myRect.w + sib.rect.x) * 0.5);
+          } else if (!nearestSameDirTipped || dist < nearestSameDirTipped.dist) {
+            nearestSameDirTipped = {
+              dist,
+              targetAngleAbs: sib.entry.targetTipAngleAbs,
+              edgeX: sib.rect.x,
+            };
+          }
+        } else {
+          const sibRight = sib.rect.x + sib.rect.w;
+          if (sibRight > myRect.x + 1) continue;
+          const dist = myRect.x - sibRight;
+          if (sib.entry.state === 'upright') {
+            stopWallX = Math.max(stopWallX, sibRight);
+          } else if (sib.entry.tipDir === 1) {
+            stopWallX = Math.max(stopWallX, (sibRight + myRect.x) * 0.5);
+          } else if (!nearestSameDirTipped || dist < nearestSameDirTipped.dist) {
+            nearestSameDirTipped = {
+              dist,
+              targetAngleAbs: sib.entry.targetTipAngleAbs,
+              edgeX: sibRight,
+            };
+          }
+        }
+      }
+
+      let dominoCap = Number.POSITIVE_INFINITY;
+      if (nearestSameDirTipped) {
+        if (nearestSameDirTipped.targetAngleAbs < 0.28) {
+          stopWallX =
+            dir === 1
+              ? Math.min(stopWallX, nearestSameDirTipped.edgeX)
+              : Math.max(stopWallX, nearestSameDirTipped.edgeX);
+        } else {
+          dominoCap = Math.max(0.18, nearestSameDirTipped.targetAngleAbs - 0.12);
+        }
+      }
+
+      const wallAngle = computeMaxTipAngleRad(myRect, dir, stopWallX);
+      const finalAngle = Math.min(wallAngle, dominoCap);
+      if (finalAngle >= 0.18) {
+        return { dir, targetAngleAbs: finalAngle };
+      }
+    }
+
+    return null;
+  }
+
   /**
-   * 책장 프레임 가속도 반대 관성력(-a)과 기울기 중력을 반영하고 고정 책들을 순차적으로 풀어낸다.
+   * 책장 프레임 관성력(-a)·기울기 중력을 주입하고 2.5D 전도-미끄러짐 경쟁으로 쓰러짐과 이탈을 가른다.
    */
   applyFrameShakeMotion(
     accelX: number,
@@ -280,8 +433,8 @@ export class ChaosWorld {
     this.engine.gravity.x = 1.35 * Math.sin(tiltRad) * 1.45;
     this.engine.gravity.y = 1.35 * Math.cos(tiltRad);
 
-    const clampedAx = Math.max(-18000, Math.min(18000, accelX));
-    const clampedAy = Math.max(-18000, Math.min(18000, accelY));
+    const clampedAx = clampValue(accelX, -18000, 18000);
+    const clampedAy = clampValue(accelY, -18000, 18000);
     const accelMag = Math.hypot(clampedAx, clampedAy);
     const shouldWake = accelMag > 650 || Math.abs(tiltRad) > 0.03;
 
@@ -314,13 +467,27 @@ export class ChaosWorld {
       return 0;
     }
 
+    const boundsTop = this.bounds.y;
+    const boundsH = Math.max(1, this.bounds.h);
     const boundsCx = this.bounds.x + this.bounds.w * 0.5;
     const halfW = Math.max(1, this.bounds.w * 0.5);
     const inertialDirX = clampedAx !== 0 ? -Math.sign(clampedAx) : 0;
+    const tiltDirX = Math.abs(tiltRad) > 0.02 ? Math.sign(tiltRad) : 0;
+    const normalRatio = clampValue(1 + clampedAy / G_REF, 0.25, 1.55);
+    const vibG =
+      Math.hypot(clampedAx * 0.72, clampedAy * 1.15) / G_REF +
+      Math.max(0, velMag - 260) / 3400 +
+      Math.max(0, Math.abs(tiltRad) - 0.04) * 1.15;
+    const tipDrive =
+      Math.abs(clampedAx) / G_REF +
+      Math.abs(tiltRad) * 1.85 +
+      Math.max(0, Math.abs(velX) - 260) / 3600;
+
     const candidates: { bookId: string; excess: number; entry: SeatedShelfBook }[] = [];
 
     for (const [bookId, entry] of this.seatedById) {
       const relX = (entry.pose.centerX - boundsCx) / halfW;
+      const relY = clampValue((entry.pose.centerY - boundsTop) / boundsH, 0, 1);
       let dirBonus = 0;
       if (inertialDirX !== 0 && Math.sign(relX) === inertialDirX) {
         dirBonus += Math.abs(relX) * 0.9;
@@ -329,15 +496,52 @@ export class ChaosWorld {
         dirBonus += 0.65;
       }
 
-      entry.fatigue += shakeEnergy * dt * (2.8 + dirBonus);
-      const progress = Math.min(1, entry.fatigue / entry.gripThreshold);
-      entry.rattleAngleOffset =
-        Math.sin(this.rattlePhase + entry.pose.centerX * 0.07) * progress * 0.085;
+      const relYBonus = 1 + (1 - relY) * 0.25;
+      const slipThreshold = entry.mu * normalRatio * (entry.state === 'tipped' ? 1.55 : 1.0);
+      if (vibG > slipThreshold) {
+        entry.depthZ += (vibG - slipThreshold) * dt * 4.9 * relYBonus * (1 + dirBonus * 0.4);
+      }
 
-      if (entry.fatigue >= entry.gripThreshold) {
+      if (entry.state === 'upright' && entry.pose.compartmentRect) {
+        const tipThreshold = entry.aspectRatio * 1.45;
+        if (tipDrive > tipThreshold) {
+          const preferredTipDir: -1 | 1 =
+            inertialDirX !== 0
+              ? (inertialDirX as -1 | 1)
+              : tiltDirX !== 0
+                ? (tiltDirX as -1 | 1)
+                : entry.pose.centerX > boundsCx
+                  ? -1
+                  : 1;
+          const option = this.resolveTipOption(bookId, entry, preferredTipDir);
+          if (option) {
+            entry.tipProgress += (tipDrive - tipThreshold) * dt * 13.5;
+            if (entry.tipProgress >= 1.0 && entry.depthZ < 1.0) {
+              entry.state = 'tipped';
+              entry.tipDir = option.dir;
+              entry.targetTipAngleAbs = option.targetAngleAbs;
+              entry.tipAngleAbs = Math.abs(entry.rattleAngleOffset);
+            }
+          } else {
+            entry.tipProgress = Math.min(
+              0.85,
+              entry.tipProgress + (tipDrive - tipThreshold) * dt * 5.0
+            );
+          }
+        }
+      }
+
+      if (entry.state === 'upright') {
+        const visualLoad = Math.min(1, Math.max(entry.depthZ, entry.tipProgress));
+        entry.rattleAngleOffset =
+          Math.sin(this.rattlePhase + entry.pose.centerX * 0.07) * visualLoad * 0.085;
+      }
+
+      const ejectLimit = entry.state === 'tipped' ? TIPPED_EJECT_DEPTH_Z : 1.0;
+      if (entry.depthZ >= ejectLimit) {
         candidates.push({
           bookId,
-          excess: entry.fatigue - entry.gripThreshold,
+          excess: entry.depthZ - ejectLimit,
           entry,
         });
       }
@@ -352,28 +556,72 @@ export class ChaosWorld {
 
     for (let i = 0; i < releaseCount; i += 1) {
       const { bookId, entry } = candidates[i];
+      const spawnPose = this.resolveSpawnPoseForEntry(bookId, entry);
       this.seatedById.delete(bookId);
-      const releaseVx = Math.max(
+      const releaseVx = clampValue(
+        -clampedAx * 0.00045 - velX * 0.0022 + (rand() - 0.5) * 2.2,
         -10,
-        Math.min(10, -clampedAx * 0.00045 - velX * 0.0022 + (rand() - 0.5) * 2.2)
+        10
       );
-      const releaseVy = Math.max(
+      const releaseVy = clampValue(
+        -clampedAy * 0.00035 + 1.5 + rand() * 2.0,
         -5,
-        Math.min(10, -clampedAy * 0.00035 + 1.5 + rand() * 2.0)
+        10
       );
       const spinSign = inertialDirX !== 0 ? inertialDirX : rand() < 0.5 ? -1 : 1;
-      const releaseAng = Math.max(
-        -0.25,
-        Math.min(0.25, spinSign * (0.04 + rand() * 0.08))
-      );
-      this.spawnActiveClosedBody(entry.pose, releaseVx, releaseVy, releaseAng);
+      const releaseAng = clampValue(spinSign * (0.04 + rand() * 0.08), -0.25, 0.25);
+      this.spawnActiveClosedBody(spawnPose, releaseVx, releaseVy, releaseAng);
     }
 
     return releaseCount;
   }
 
+  /**
+   * 버튼 또는 스페이스바 흔들기 시 2.5D 전도-미끄러짐 경쟁 버스트를 여러 마이크로 스텝으로 주입한다.
+   */
+  applyButtonShakeBurst(vx: number, vy: number): void {
+    const stepDt = 1 / 60;
+    const baseAx = -vx * 1150;
+    const baseAy = vy * 380;
+    const frameVx = vx * 85;
+    const frameVy = vy * 40;
+    const baseTilt = (vx === 0 ? 1 : Math.sign(vx)) * 0.09;
+
+    for (let i = 0; i < 16; i += 1) {
+      const microSign = i >= 8 ? -0.92 : 1;
+      this.applyFrameShakeMotion(
+        baseAx * microSign,
+        baseAy,
+        frameVx * microSign,
+        frameVy,
+        baseTilt * microSign,
+        stepDt
+      );
+    }
+
+    this.applyShakeImpulse(vx, vy);
+  }
+
   getSeatedCount(): number {
     return this.seatedById.size;
+  }
+
+  getTippedCount(): number {
+    let count = 0;
+    for (const entry of this.seatedById.values()) {
+      if (entry.state === 'tipped') count += 1;
+    }
+    return count;
+  }
+
+  getTippedDirections(): Map<string, -1 | 1> {
+    const out = new Map<string, -1 | 1>();
+    for (const [bookId, entry] of this.seatedById) {
+      if (entry.state === 'tipped') {
+        out.set(bookId, entry.tipDir);
+      }
+    }
+    return out;
   }
 
   getDislodgedCount(): number {
@@ -383,11 +631,26 @@ export class ChaosWorld {
   getSeatedPoses(): Map<string, ChaosBodyPose> {
     const out = new Map<string, ChaosBodyPose>();
     for (const [bookId, entry] of this.seatedById) {
-      out.set(bookId, {
-        x: entry.pose.centerX,
-        y: entry.pose.centerY,
-        angle: entry.pose.angleRad + entry.rattleAngleOffset,
-      });
+      if (entry.state === 'tipped') {
+        const tf = computeTippedBookTransform(
+          this.getUprightRectForEntry(entry),
+          entry.tipDir,
+          entry.tipAngleAbs
+        );
+        out.set(bookId, {
+          x: tf.centerX,
+          y: tf.centerY,
+          angle: tf.angleRad,
+          depthZ: clampValue(entry.depthZ * 0.5, 0, 0.5),
+        });
+      } else {
+        out.set(bookId, {
+          x: entry.pose.centerX,
+          y: entry.pose.centerY,
+          angle: entry.pose.angleRad + entry.rattleAngleOffset,
+          depthZ: clampValue(entry.depthZ, 0, 1),
+        });
+      }
     }
     return out;
   }
@@ -725,7 +988,21 @@ export class ChaosWorld {
   }
 
   step(dtMs: number): void {
-    this.accumulatorMs += Math.min(Math.max(0, dtMs), 50);
+    const clampedDtMs = Math.min(Math.max(0, dtMs), 50);
+    if (this.mode === 'closed_shelf' && this.seatedById.size > 0) {
+      const tipLerp = Math.min(1, clampedDtMs * 0.001 * 11);
+      for (const entry of this.seatedById.values()) {
+        if (entry.state !== 'tipped') continue;
+        const diff = entry.targetTipAngleAbs - entry.tipAngleAbs;
+        if (Math.abs(diff) < 0.004) {
+          entry.tipAngleAbs = entry.targetTipAngleAbs;
+        } else {
+          entry.tipAngleAbs += diff * tipLerp;
+        }
+      }
+    }
+
+    this.accumulatorMs += clampedDtMs;
     let substeps = 0;
 
     while (this.accumulatorMs >= FIXED_STEP_MS && substeps < MAX_SUBSTEPS_PER_FRAME) {
@@ -772,6 +1049,16 @@ export class ChaosWorld {
   }
 
   isAllSleeping(): boolean {
+    if (this.mode === 'closed_shelf') {
+      for (const entry of this.seatedById.values()) {
+        if (
+          entry.state === 'tipped' &&
+          Math.abs(entry.targetTipAngleAbs - entry.tipAngleAbs) > 0.005
+        ) {
+          return false;
+        }
+      }
+    }
     for (const body of this.bodiesById.values()) {
       if (body.isSleeping) continue;
       const speed = Math.hypot(body.velocity.x, body.velocity.y);
