@@ -13,6 +13,7 @@ import { createShelfEngine } from '../shelfEngine';
 
 interface ShelfStageProps {
   readonly volume: ShelfVolume;
+  readonly volumeRevision: number;
   readonly initialPreferences: UserPreferences;
   readonly themeId: DeskThemeId;
   readonly audioEnabled: boolean;
@@ -26,6 +27,7 @@ interface ShelfStageProps {
 
 export function ShelfStage({
   volume,
+  volumeRevision,
   initialPreferences,
   themeId,
   audioEnabled,
@@ -37,7 +39,7 @@ export function ShelfStage({
   onTidyComplete,
 }: ShelfStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const mountedVolumeIdRef = useRef<string>(volume.id);
+  const mountedVolumeKeyRef = useRef<string>(`${volume.id}:${volumeRevision}`);
 
   const callbacksRef = useRef({
     onStateChange,
@@ -64,7 +66,7 @@ export function ShelfStage({
     });
 
     controllerRef.current = engine;
-    mountedVolumeIdRef.current = volume.id;
+    mountedVolumeKeyRef.current = `${volume.id}:${volumeRevision}`;
     engine.mount(canvas, volume, initialPreferences);
 
     return () => {
@@ -78,11 +80,12 @@ export function ShelfStage({
   useEffect(() => {
     const engine = controllerRef.current;
     if (!engine) return;
-    if (mountedVolumeIdRef.current !== volume.id) {
-      mountedVolumeIdRef.current = volume.id;
+    const nextKey = `${volume.id}:${volumeRevision}`;
+    if (mountedVolumeKeyRef.current !== nextKey) {
+      mountedVolumeKeyRef.current = nextKey;
       engine.loadVolume(volume);
     }
-  }, [controllerRef, volume]);
+  }, [controllerRef, volume, volumeRevision]);
 
   useEffect(() => {
     controllerRef.current?.setTheme(themeId);
