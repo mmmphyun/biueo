@@ -232,8 +232,8 @@ export interface ShelfEngineController {
    - 포인터 다운 후 업까지의 유클리드 이동 거리가 `6px 미만`이고 경과 시간이 `220ms 미만`이면 `onBookTap(bookId)`를 발생시킵니다.
    - `6px 이상` 이동 시 즉시 드래그 상태로 전환해 책을 집어 올립니다(리프트 스케일 `1.04`, 그림자 오프셋 `(+10px, +13px)`).
 2. **흔들기 트리거**:
-   - **프레임 드래그 흔들기**: `LOCKED_NEAT` / `SHAKING_CHAOS`에서 프레임 이동 속도 `>= 420 px/s` 시 방향 반전 임펄스 주입.
-   - **키보드**: `Space` 홀드 중 `140ms` 간격으로 교차 임펄스 주입 (`prefers-reduced-motion: reduce` 시 시각 흔들림 진폭 30% 축소).
+   - **프레임 직접 잡기 흔들기**: 닫힌 유리문 상태(`LOCKED_NEAT` / `SHAKING_CHAOS`)에서만 책장 프레임 클릭·드래그를 허용(`OPEN_TIDYING`에서는 개별 책 조작 보호를 위해 비활성화)합니다. 책장은 포인터를 스프링으로 추적하며 이동 속도에 비례해 기울고, 가속도 반대 관성력(`-a`)·기울기 중력을 주입해 흔들림 세기에 맞춰 책들을 점진적으로 풀어 떨어뜨립니다.
+   - **키보드 / 버튼**: `흔들기` 버튼 및 `Space` 홀드(`140ms` 간격)는 미이탈 책을 일괄 해제해 즉각 전권 난투 충격을 주입합니다(`prefers-reduced-motion: reduce` 시 시각 흔들림 진폭 30% 축소).
    - **모바일 가속도계**: 명시적 버튼 클릭으로 `DeviceMotionEvent.requestPermission()` 획득 후, 선형 가속도 크기 `sqrt(ax² + ay² + az²) > 15 m/s²` 감지 시 180ms 디바운스로 임펄스 주입.
 3. **Matter.js 터널링 방어 (Chaos Mode)**:
    - 책장 외곽 불가시 벽 두께 `>= 120px`.
@@ -243,7 +243,7 @@ export interface ShelfEngineController {
    - 3×3 36권 규격을 유지하되(390px 기준 `minBookWidthPx ≈ 17.8px`), 터치 입력 시 포인터 반경 `28px` 내 가장 가까운 책 중심점을 선택하는 **근접 자석 선택(Nearest-Neighbor Magnet)**을 적용합니다.
    - 터치 드래그 중에는 책을 손가락 위쪽 `-48px` 오프셋으로 띄워 엄지에 가리지 않게 유지하며, 드롭 슬롯 판정은 떠 있는 책의 중심 좌표를 기준으로 계산합니다.
 5. **유리문 열림 물리 전환 분기 (`OPEN_TIDYING` 진입 규칙)**:
-   - `SHAKING_CHAOS -> OPEN_TIDYING`: `ChaosWorld` 강체를 리셋·격자 보간하지 않고 외곽 물리 벽만 안전 데스크 영역(`x: 18..viewportW-18`, `y: 24..viewportH-86`)으로 확장해 연속 쏟아짐을 실행합니다(`0-380ms` 낙하 가속 및 책장 탈출, `380-1600ms` 중력 감쇠·테이블 마찰 정지, 도중 드래그 시 `removeBody()`로 즉시 키네마틱 픽업, `prefers-reduced-motion` 시 `fastForwardSpill(120)` 동기 정지).
+   - `SHAKING_CHAOS -> OPEN_TIDYING`: `ChaosWorld`에서 실제 이탈한 책(`dislodged > 0`)만 배치를 해제하고 외곽 물리 벽을 안전 데스크 영역(`x: 18..viewportW-18`, `y: 24..viewportH-86`)으로 확장해 연속 쏟아짐을 실행합니다. 아직 칸에 남아 있는 책은 제자리에 유지되며, 이탈한 책이 0권이면 일반 정돈 상태 열림으로 전환합니다.
    - `OPEN_TIDYING` 중 유효한 칸 밖에서 드래그를 놓으면 허공 고정 없이 `desk_drop` 모드의 중력 낙하·휴면 책 충돌을 거쳐 자연스럽게 떨어져 정지합니다.
    - `LOCKED_NEAT -> OPEN_TIDYING`: 흔들지 않고 정돈된 상태에서 걸쇠를 열면 전권이 제자리에 조용히 머물러 사용자가 특정 책만 탭해 읽거나 일부만 재배치할 수 있습니다.
 

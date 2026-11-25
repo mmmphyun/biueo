@@ -54,6 +54,10 @@ function pointInRect(px: number, py: number, rect: Rect): boolean {
   );
 }
 
+function softClamp(val: number, max: number): number {
+  return max <= 0 ? 0 : max * Math.tanh(val / max);
+}
+
 interface ActivePointerDrag {
   readonly pointerId: number;
   readonly pointerType: string;
@@ -101,6 +105,9 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   let frameShakeY = 0;
   let frameShakeVx = 0;
   let frameShakeVy = 0;
+  let frameTargetX = 0;
+  let frameTargetY = 0;
+  let frameShakeAngle = 0;
   let shakeDirSign = 1;
   let latchWiggleTimer = 0;
   let completionGlowTimer = 0;
@@ -306,9 +313,15 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       ctx.restore();
     }
 
-    // 2. 책장 본체 오프셋 그림자 (흔들기 오프셋 반영)
+    // 2. 책장 본체 오프셋 그림자 (중심 회전·잡기 흔들림 오프셋 반영)
+    const shelfCx = frameRect.x + frameRect.w * 0.5;
+    const shelfCy = frameRect.y + frameRect.h * 0.5;
     ctx.save();
-    ctx.translate(frameShakeX, frameShakeY);
+    ctx.translate(shelfCx + frameShakeX, shelfCy + frameShakeY);
+    if (Math.abs(frameShakeAngle) > 0.0005) {
+      ctx.rotate(frameShakeAngle);
+    }
+    ctx.translate(-shelfCx, -shelfCy);
 
     ctx.save();
     ctx.fillStyle = theme.shadow;
@@ -351,33 +364,39 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
 
     // 4. 책 렌더링 순서 분리 (칸 내부 책 -> 유리문 -> 데스크 책 -> 드래그 중인 책)
     if (shelfState === 'SHAKING_CHAOS' && chaosWorld) {
-      const bodyPoses = chaosWorld.getBodyPoses();
       const refComp = layout.compartments[0];
-      for (const book of volume.books) {
-        const bp = bodyPoses.get(book.id);
-        if (!bp) continue;
-        const dims = computeBookDimensions(book, refComp);
-        drawBookPose(
-          ctx,
-          {
-            bookId: book.id,
-            x: bp.x,
-            y: bp.y,
-            angle: bp.angle,
-            scale: 1,
-            widthPx: dims.widthPx,
-            heightPx: dims.heightPx,
-            targetX: bp.x,
-            targetY: bp.y,
-            targetAngle: bp.angle,
-            targetScale: 1,
-          },
-          true,
-          false,
-          false,
-          theme.shadow
-        );
-      }
+      const activeBooks = volume.books;
+      const drawChaosMap = (
+        poseMap: Map<string, { readonly x: number; readonly y: number; readonly angle: number }>
+      ) => {
+        for (const book of activeBooks) {
+          const bp = poseMap.get(book.id);
+          if (!bp) continue;
+          const dims = computeBookDimensions(book, refComp);
+          drawBookPose(
+            ctx,
+            {
+              bookId: book.id,
+              x: bp.x,
+              y: bp.y,
+              angle: bp.angle,
+              scale: 1,
+              widthPx: dims.widthPx,
+              heightPx: dims.heightPx,
+              targetX: bp.x,
+              targetY: bp.y,
+              targetAngle: bp.angle,
+              targetScale: 1,
+            },
+            true,
+            false,
+            false,
+            theme.shadow
+          );
+        }
+      };
+      drawChaosMap(chaosWorld.getSeatedPoses());
+      drawChaosMap(chaosWorld.getBodyPoses());
     } else {
       const shelvedIds: string[] = [];
       const deskIds: string[] = [];
@@ -476,7 +495,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     rafId = null;
     if (paused) return;
 
-    const dtMs = lastFrameTimeMs > 0 ? Math.min(50, nowMs - lastFrameTimeMs) : 16.6;
+    const dtMs = lastFrameTimeMs > 0 ? Math.max(0, Math.min(50, nowMs - lastFrameTimeMs)) : 16.6;
     const dtSec = dtMs * 0.001;
     lastFrameTimeMs = nowMs;
 
@@ -493,14 +512,29 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       keepAnimating = true;
     }
 
-    // 프레임 시각 흔들림 감쇠 스프링
-    if (
+    // 프레임 직접 잡기 추적 및 복원 스프링
+    const isHoldingFrame =
+      activeDrag?.mode === 'frame_shake' &&
+      (shelfState === 'LOCKED_NEAT' || shelfState === 'SHAKING_CHAOS');
+    const prevVx = frameShakeVx;
+    const prevVy = frameShakeVy;
+
+    if (isHoldingFrame) {
+      const k = 340;
+      const damp = 32;
+      frameShakeVx += (k * (frameTargetX - frameShakeX) - damp * frameShakeVx) * dtSec;
+      frameShakeVy += (k * (frameTargetY - frameShakeY) - damp * frameShakeVy) * dtSec;
+      frameShakeX += frameShakeVx * dtSec;
+      frameShakeY += frameShakeVy * dtSec;
+      keepAnimating = true;
+    } else if (
       Math.abs(frameShakeX) > 0.1 ||
       Math.abs(frameShakeY) > 0.1 ||
       Math.abs(frameShakeVx) > 0.5 ||
-      Math.abs(frameShakeVy) > 0.5
+      Math.abs(frameShakeVy) > 0.5 ||
+      Math.abs(frameShakeAngle) > 0.001
     ) {
-      const k = 180;
+      const k = 190;
       const damp = 14;
       frameShakeVx += (-k * frameShakeX - damp * frameShakeVx) * dtSec;
       frameShakeVy += (-k * frameShakeY - damp * frameShakeVy) * dtSec;
@@ -512,6 +546,34 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       frameShakeY = 0;
       frameShakeVx = 0;
       frameShakeVy = 0;
+      frameShakeAngle = 0;
+    }
+
+    const amp = reduced ? 0.3 : 1;
+    const targetAngle =
+      Math.max(-0.14, Math.min(0.14, frameShakeVx * 0.00014 + frameShakeX * 0.00045)) * amp;
+    frameShakeAngle += (targetAngle - frameShakeAngle) * Math.min(1, dtSec * 18);
+    if (!isHoldingFrame && Math.abs(frameShakeAngle) < 0.0008 && Math.abs(frameShakeVx) < 0.5) {
+      frameShakeAngle = 0;
+    }
+
+    const frameAx = (frameShakeVx - prevVx) / Math.max(0.008, dtSec);
+    const frameAy = (frameShakeVy - prevVy) / Math.max(0.008, dtSec);
+    const accelMag = Math.hypot(frameAx, frameAy);
+    const velMag = Math.hypot(frameShakeVx, frameShakeVy);
+
+    if (
+      shelfState === 'LOCKED_NEAT' &&
+      isHoldingFrame &&
+      (accelMag > 900 || velMag > 260) &&
+      volume &&
+      layout
+    ) {
+      chaosWorld?.dispose();
+      chaosWorld = new ChaosWorld(layout.innerRect);
+      chaosWorld.spawnSeatedPoses(buildClosedShelfSpawnList());
+      shelfState = 'SHAKING_CHAOS';
+      emitSnapshot();
     }
 
     if (latchWiggleTimer > 0) {
@@ -525,8 +587,16 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     }
 
     if (shelfState === 'SHAKING_CHAOS' && chaosWorld) {
+      chaosWorld.applyFrameShakeMotion(
+        frameAx,
+        frameAy,
+        frameShakeVx,
+        frameShakeVy,
+        frameShakeAngle,
+        dtSec
+      );
       chaosWorld.step(dtMs);
-      if (!chaosWorld.isAllSleeping()) {
+      if (isHoldingFrame || !chaosWorld.isAllSleeping()) {
         keepAnimating = true;
       }
     } else if (shelfState === 'OPEN_TIDYING' && isSpillingToDesk && chaosWorld) {
@@ -599,29 +669,35 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     rafId = window.requestAnimationFrame(stepLoop);
   };
 
+  const buildClosedShelfSpawnList = () => {
+    if (!volume || !layout) return [];
+    const refComp = layout.compartments[0];
+    return volume.books.map((book) => {
+      const pose = poses.get(book.id);
+      const dims = computeBookDimensions(book, refComp);
+      return {
+        bookId: book.id,
+        centerX: pose?.x ?? layout!.innerRect.x + layout!.innerRect.w * 0.5,
+        centerY: pose?.y ?? layout!.innerRect.y + layout!.innerRect.h * 0.5,
+        widthPx: pose?.widthPx ?? dims.widthPx,
+        heightPx: pose?.heightPx ?? dims.heightPx,
+        angleRad: pose?.angle ?? getBookOrganicLeanRad(book.seed),
+      };
+    });
+  };
+
   const enterChaosAndShake = (vx: number, vy: number) => {
     if (!volume || !layout) return;
     if (shelfState !== 'LOCKED_NEAT' && shelfState !== 'SHAKING_CHAOS') return;
 
     if (shelfState === 'LOCKED_NEAT') {
-      const spawnList = volume.books.map((book) => {
-        const pose = poses.get(book.id);
-        const refComp = layout!.compartments[0];
-        const dims = computeBookDimensions(book, refComp);
-        return {
-          bookId: book.id,
-          centerX: pose?.x ?? layout!.innerRect.x + layout!.innerRect.w * 0.5,
-          centerY: pose?.y ?? layout!.innerRect.y + layout!.innerRect.h * 0.5,
-          widthPx: pose?.widthPx ?? dims.widthPx,
-          heightPx: pose?.heightPx ?? dims.heightPx,
-          angleRad: pose?.angle ?? getBookOrganicLeanRad(book.seed),
-        };
-      });
       chaosWorld?.dispose();
       chaosWorld = new ChaosWorld(layout.innerRect);
-      chaosWorld.spawnFromPoses(spawnList);
+      chaosWorld.spawnFromPoses(buildClosedShelfSpawnList());
       shelfState = 'SHAKING_CHAOS';
       emitSnapshot();
+    } else if (shelfState === 'SHAKING_CHAOS') {
+      chaosWorld?.releaseAllSeatedBodies();
     }
 
     chaosWorld?.applyShakeImpulse(vx, vy);
@@ -652,28 +728,28 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     }
 
     if (shelfState === 'SHAKING_CHAOS') {
-      // 흔든 뒤 열면 Matter.js 물리 경계를 데스크 전체로 열어 책들이 촤라락 쏟아지게 둔다.
-      const refComp = layout.compartments[0];
-      if (!chaosWorld) {
-        chaosWorld = new ChaosWorld(layout.innerRect);
-        const fallbackSpawn = volume.books.map((book) => {
-          const prevPose = poses.get(book.id);
-          const dims = computeBookDimensions(book, refComp);
-          return {
-            bookId: book.id,
-            centerX: prevPose?.x ?? layout!.innerRect.x + layout!.innerRect.w * 0.5,
-            centerY: prevPose?.y ?? layout!.innerRect.y + layout!.innerRect.h * 0.5,
-            widthPx: prevPose?.widthPx ?? dims.widthPx,
-            heightPx: prevPose?.heightPx ?? dims.heightPx,
-            angleRad: prevPose?.angle ?? getBookOrganicLeanRad(book.seed),
-          };
-        });
-        chaosWorld.spawnFromPoses(fallbackSpawn);
+      frameTargetX = 0;
+      frameTargetY = 0;
+
+      // 살짝만 흔들어 실제 이탈한 책이 0권이면 제자리 정돈 상태로 문을 연다.
+      if (!chaosWorld || chaosWorld.getDislodgedCount() === 0) {
+        chaosWorld?.dispose();
+        chaosWorld = null;
+        isSpillingToDesk = false;
+        shelfState = 'OPEN_TIDYING';
+        poses = buildNeatPoses(volume.books, layout);
+        drawOrderIds = volume.books.map((b) => b.id);
+        emitSnapshot();
+        requestRedraw();
+        return;
       }
 
-      const nextPoses = new Map<string, KinematicBookPose>();
+      // 흔들려 풀린 책만 데스크 여백으로 쏟아지고 칸에 남은 책은 자기 자리에 머문다.
+      const refComp = layout.compartments[0];
+      const nextPoses = buildNeatPoses(volume.books, layout);
       const preSpillPoses = chaosWorld.getBodyPoses();
       for (const book of volume.books) {
+        if (!chaosWorld.hasBody(book.id)) continue;
         book.placement = null;
         const dims = computeBookDimensions(book, refComp);
         const bp = preSpillPoses.get(book.id);
@@ -723,7 +799,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
         isSpillingToDesk = true;
       }
 
-      drawOrderIds = volume.books.map((b) => b.id);
+      refreshDrawOrder();
       shelfState = 'OPEN_TIDYING';
       callbacks.onShelfCommit(cloneBooksForCommit());
       emitSnapshot();
@@ -862,15 +938,18 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       return;
     }
 
-    // 2. 잠김/혼돈 상태에서는 책장 프레임 드래그 흔들기 시작
+    // 2. 잠김/혼돈 상태에서는 책장 프레임 직접 잡기·흔들기 시작
     if (shelfState === 'LOCKED_NEAT' || shelfState === 'SHAKING_CHAOS') {
       if (pointInRect(px, py, layout.frameRect)) {
         canvas.setPointerCapture(e.pointerId);
+        canvas.style.cursor = 'grabbing';
+        frameTargetX = frameShakeX;
+        frameTargetY = frameShakeY;
         activeDrag = {
           pointerId: e.pointerId,
           pointerType: e.pointerType,
-          downX: px,
-          downY: py,
+          downX: px - frameShakeX,
+          downY: py - frameShakeY,
           downTimeMs: performance.now(),
           mode: 'frame_shake',
           bookId: null,
@@ -883,6 +962,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
           velX: 0,
           velY: 0,
         };
+        requestRedraw();
       }
       return;
     }
@@ -947,16 +1027,15 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     const drag = activeDrag;
     const nowMs = performance.now();
     if (drag.mode === 'frame_shake') {
-      const dtSec = Math.max(0.008, (nowMs - drag.lastMoveTimeMs) * 0.001);
-      const vxPx = (px - drag.lastMoveX) / dtSec;
-      const vyPx = (py - drag.lastMoveY) / dtSec;
-      const speed = Math.hypot(vxPx, vyPx);
-      if (speed >= 420) {
-        enterChaosAndShake(vxPx * 0.015, vyPx * 0.015);
-      }
+      const motionScale = prefersReducedMotion() ? 0.35 : 1;
+      const maxX = (layout.isDesktop ? 130 : 54) * motionScale;
+      const maxY = (layout.isDesktop ? 82 : 48) * motionScale;
+      frameTargetX = softClamp(px - drag.downX, maxX);
+      frameTargetY = softClamp(py - drag.downY, maxY);
       drag.lastMoveX = px;
       drag.lastMoveY = py;
       drag.lastMoveTimeMs = nowMs;
+      requestRedraw();
       return;
     }
 
@@ -1028,6 +1107,14 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     const py = e.clientY - rect.top;
     const drag = activeDrag;
     activeDrag = null;
+
+    if (drag.mode === 'frame_shake') {
+      frameTargetX = 0;
+      frameTargetY = 0;
+      canvas.style.cursor = 'grab';
+      requestRedraw();
+      return;
+    }
 
     if (drag.mode === 'book_candidate' && drag.bookId) {
       if (!drag.isDraggingBook) {
@@ -1196,6 +1283,9 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     window.removeEventListener('keyup', handleKeyUp);
     window.removeEventListener('devicemotion', handleDeviceMotion);
     isSpillingToDesk = false;
+    frameTargetX = 0;
+    frameTargetY = 0;
+    frameShakeAngle = 0;
     chaosWorld?.dispose();
     chaosWorld = null;
     if (rafId !== null) {
@@ -1222,6 +1312,9 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
 
   const loadVolume = (nextVolume: ShelfVolume) => {
     isSpillingToDesk = false;
+    frameTargetX = 0;
+    frameTargetY = 0;
+    frameShakeAngle = 0;
     chaosWorld?.dispose();
     chaosWorld = null;
     activeDrag = null;
