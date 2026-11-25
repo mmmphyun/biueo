@@ -1,4 +1,6 @@
-import { DESK_THEMES, SHELF_WOOD_COLORS } from '../data/palette';
+import { DESK_THEMES } from '../../shared/theme/deskThemes';
+import { drawDeskPaperBackground } from '../../shared/canvas/deskBackdrop';
+import { SHELF_WOOD_COLORS } from './data/bookPalette';
 import type {
   BookModel,
   DeskThemeId,
@@ -10,7 +12,7 @@ import type {
   ShelfVolume,
   UserPreferences,
   VisualTuningParams,
-} from '../types/contracts';
+} from '../../types/contracts';
 import {
   computeBookDimensions,
   computeBookSlotNormX,
@@ -38,8 +40,8 @@ import {
   getTintedShadowCanvas,
   type BakedBookSprite,
 } from './textures/bookBaker';
-import { traceOrganicRect } from './textures/gouachePath';
-import { createPaperNoiseTiles, type PaperNoiseTiles } from './textures/paperNoise';
+import { traceOrganicRect } from '../../shared/canvas/gouachePath';
+import { createPaperNoiseTiles, type PaperNoiseTiles } from '../../shared/canvas/paperNoise';
 import {
   bakeShelfSprites,
   drawBrassLatch,
@@ -301,20 +303,14 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // 1. 데스크 바탕 및 종이 질감
-    ctx.fillStyle = theme.bg;
-    ctx.fillRect(0, 0, viewportW, viewportH);
-
-    const deskPattern = ctx.createPattern(tiles.deskPaperTile, 'repeat');
-    if (deskPattern) {
-      ctx.save();
-      ctx.globalCompositeOperation = theme.isDarkDesk ? 'soft-light' : 'multiply';
-      ctx.globalAlpha = theme.isDarkDesk
-        ? 0.28
-        : Math.min(0.85, 0.35 + tuning.grainStrength * 0.8);
-      ctx.fillStyle = deskPattern;
-      ctx.fillRect(0, 0, viewportW, viewportH);
-      ctx.restore();
-    }
+    drawDeskPaperBackground(
+      ctx,
+      theme,
+      tiles.deskPaperTile,
+      viewportW,
+      viewportH,
+      tuning.grainStrength
+    );
 
     // 2. 책장 본체 오프셋 그림자 (중심 회전·잡기 흔들림 오프셋 반영)
     const shelfCx = frameRect.x + frameRect.w * 0.5;
@@ -1427,12 +1423,6 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     requestRedraw();
   };
 
-  const setTuning = (nextTuning: VisualTuningParams) => {
-    tuning = { ...nextTuning };
-    ensureBakedSprites();
-    requestRedraw();
-  };
-
   const setAudioEnabled = (_enabled: boolean) => {
     // Phase 2 Web Audio 폴리 엔진 연결 예정
   };
@@ -1449,7 +1439,6 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     loadVolume,
     updateBookNote,
     setTheme,
-    setTuning,
     setAudioEnabled,
     setMotionShakeEnabled,
     triggerShake,

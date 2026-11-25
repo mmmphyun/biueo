@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { createShelfEngine } from '../engine/shelfEngine';
+import { useCallback, useEffect, useRef } from 'react';
+import { CanvasStageShell } from '../../../shared/ui/CanvasStageShell';
 import type {
   BookModel,
   DeskThemeId,
@@ -8,7 +8,8 @@ import type {
   ShelfEngineSnapshot,
   ShelfVolume,
   UserPreferences,
-} from '../types/contracts';
+} from '../../../types/contracts';
+import { createShelfEngine } from '../shelfEngine';
 
 interface ShelfStageProps {
   readonly volume: ShelfVolume;
@@ -33,7 +34,6 @@ export function ShelfStage({
   onShelfCommit,
   onTidyComplete,
 }: ShelfStageProps) {
-  const shellRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mountedVolumeIdRef = useRef<string>(volume.id);
 
@@ -51,9 +51,8 @@ export function ShelfStage({
   };
 
   useEffect(() => {
-    const shell = shellRef.current;
     const canvas = canvasRef.current;
-    if (!shell || !canvas) return;
+    if (!canvas) return;
 
     const engine = createShelfEngine({
       onStateChange: (snap) => callbacksRef.current.onStateChange(snap),
@@ -66,41 +65,7 @@ export function ShelfStage({
     mountedVolumeIdRef.current = volume.id;
     engine.mount(canvas, volume, initialPreferences);
 
-    // Modern Web Guidance (efficient-background-processing):
-    // contentvisibilityautostatechange는 버블링하지 않으므로 .shelf-stage-shell에 직접 연결한다.
-    const syncPause = (shouldPause: boolean) => {
-      if (shouldPause) engine.pause();
-      else engine.resume();
-    };
-
-    const handleContentVisibility = (event: Event) => {
-      const skipped = Boolean((event as Event & { skipped?: boolean }).skipped);
-      syncPause(skipped || document.hidden);
-    };
-    shell.addEventListener('contentvisibilityautostatechange', handleContentVisibility);
-
-    let intersectionObserver: IntersectionObserver | null = null;
-    if (!('contentVisibility' in document.documentElement.style)) {
-      intersectionObserver = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            syncPause(!entry.isIntersecting || document.hidden);
-          }
-        },
-        { rootMargin: '200px' }
-      );
-      intersectionObserver.observe(shell);
-    }
-
-    const handleVisibility = () => {
-      syncPause(document.hidden);
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-
     return () => {
-      shell.removeEventListener('contentvisibilityautostatechange', handleContentVisibility);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      intersectionObserver?.disconnect();
       engine.unmount();
       controllerRef.current = null;
     };
@@ -125,13 +90,23 @@ export function ShelfStage({
     controllerRef.current?.setMotionShakeEnabled(motionShakeEnabled);
   }, [controllerRef, motionShakeEnabled]);
 
+  const handlePauseChange = useCallback(
+    (paused: boolean) => {
+      const engine = controllerRef.current;
+      if (!engine) return;
+      if (paused) engine.pause();
+      else engine.resume();
+    },
+    [controllerRef]
+  );
+
   return (
-    <div ref={shellRef} className="shelf-stage-shell">
+    <CanvasStageShell onPauseChange={handlePauseChange}>
       <canvas
         ref={canvasRef}
         aria-label="생각을 비우는 원목 책장 인터랙티브 캔버스"
         className="block h-full w-full select-none"
       />
-    </div>
+    </CanvasStageShell>
   );
 }
