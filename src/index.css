@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light dark;
   --font-sans-ui: 'IBM Plex Sans KR', 'Pretendard Variable', 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
 }
 
@@ -62,5 +63,18 @@ dialog::backdrop {
 @media (prefers-reduced-motion: reduce) {
   .desk-ink-action {
     transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .paper-sheet-dialog {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+
+  .desk-paint-dab {
+    forced-color-adjust: none;
+    border: 1px solid ButtonText;
+    box-shadow: none !important;
   }
 }
