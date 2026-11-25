@@ -5,6 +5,8 @@ import {
   BOOK_GAP_RATIO,
   BOOK_THICKNESS_RATIOS,
   COMPARTMENT_USABLE_WIDTH,
+  getBookRitualPrompt,
+  RITUAL_PROMPT_POOL,
   RITUAL_PROMPT_TYPES,
   SPINE_MOTIFS,
 } from './palette';
@@ -115,6 +117,32 @@ describe('createDefaultVolume combinatorial invariants', () => {
       const slackRatio = (totalUsableMinusMinGaps - totalBookWidth) / totalUsableMinusMinGaps;
       expect(slackRatio).toBeGreaterThan(0.1);
     }
+  });
+
+  it('provides 16 distinct seeded ritual prompts across 4 axes with deterministic book assignment', () => {
+    const allTexts = new Set<string>();
+    for (const axis of RITUAL_PROMPT_TYPES) {
+      const entries = RITUAL_PROMPT_POOL[axis];
+      expect(entries).toHaveLength(4);
+      for (const entry of entries) {
+        allTexts.add(entry.promptText);
+      }
+    }
+    expect(allTexts.size).toBe(16);
+
+    const vol3x3 = createDefaultVolume(1, '3x3');
+    const used3x3 = new Set(vol3x3.books.map((b) => getBookRitualPrompt(b).promptText));
+    expect(used3x3.size).toBeGreaterThanOrEqual(14);
+    for (const book of vol3x3.books) {
+      expect(getBookRitualPrompt(book).promptText).toBe(getBookRitualPrompt(book).promptText);
+      if (book.note) {
+        expect(book.note.promptText).toBe(getBookRitualPrompt(book).promptText);
+      }
+    }
+
+    const vol5x3 = createDefaultVolume(1, '5x3');
+    const used5x3 = new Set(vol5x3.books.map((b) => getBookRitualPrompt(b).promptText));
+    expect(used5x3.size).toBe(16);
   });
 });
 

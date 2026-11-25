@@ -16,8 +16,8 @@ import {
   BOOK_THICKNESS_RATIOS,
   COMPARTMENT_SIDE_MARGIN,
   COMPARTMENT_USABLE_WIDTH,
+  getBookRitualPrompt,
   RITUAL_PROMPT_TYPES,
-  RITUAL_PROMPTS,
   SPINE_MOTIFS,
 } from './palette';
 
@@ -105,13 +105,14 @@ export function createDefaultVolume(
     const motif = SPINE_MOTIFS[i % SPINE_MOTIFS.length];
     const defaultPromptType =
       RITUAL_PROMPT_TYPES[(colorGroup + heightInGroup) % RITUAL_PROMPT_TYPES.length];
+    const seed = 1000 + volumeNumber * 100 + gridCols * 19 + i * 37;
 
     const sampleText =
       volumeNumber === 1 && (i < 36 || gridPreset === '5x3') ? SAMPLE_NOTES[i] : undefined;
     const note: RitualNote | null = sampleText
       ? {
           promptType: defaultPromptType,
-          promptText: RITUAL_PROMPTS[defaultPromptType].promptText,
+          promptText: getBookRitualPrompt({ seed, defaultPromptType }).promptText,
           content: sampleText,
           createdAt: now,
           updatedAt: now,
@@ -121,7 +122,7 @@ export function createDefaultVolume(
     const paddedIdx = String(i).padStart(2, '0');
     return {
       id: `vol${volumeNumber}-${gridPreset}-book-${paddedIdx}`,
-      seed: 1000 + volumeNumber * 100 + gridCols * 19 + i * 37,
+      seed,
       colorId,
       colorOrderIndex: colorSpec.orderIndex,
       heightTier,

@@ -223,27 +223,111 @@ export const RITUAL_PROMPT_TYPES: readonly RitualPromptType[] = [
   'gratitude',
 ];
 
-export const RITUAL_PROMPTS: Record<
-  RitualPromptType,
-  { readonly promptText: string; readonly placeholder: string }
-> = {
-  strength_recall: {
-    promptText: '최근 내 강점이 잘 드러났던 순간이 있다면?',
-    placeholder: '사소한 일이어도 괜찮아요. 한 줄만 남겨둘까요.',
-  },
-  future_action: {
-    promptText: '오늘 살려보고 싶은 내 강점과 작은 행동은?',
-    placeholder: '거창하지 않아도 돼요. 오늘 해볼 딱 한 가지만 적어보세요.',
-  },
-  self_compassion: {
-    promptText: '오늘 하루를 보낸 나에게 건네고 싶은 말은?',
-    placeholder: '고생한 나에게 짧게 한 마디 남겨두세요.',
-  },
-  gratitude: {
-    promptText: '요즘 작게라도 고마웠던 일이나 사람이 있나요?',
-    placeholder: '떠오르는 순간을 가볍게 기록해 보세요.',
-  },
+export interface RitualPromptEntry {
+  readonly promptText: string;
+  readonly placeholder: string;
+}
+
+export const RITUAL_AXIS_LABELS: Record<RitualPromptType, string> = {
+  strength_recall: '강점 회고',
+  future_action: '오늘의 행동',
+  self_compassion: '자기격려',
+  gratitude: '작은 감사',
 };
+
+export const RITUAL_PROMPT_POOL: Record<RitualPromptType, readonly RitualPromptEntry[]> = {
+  strength_recall: [
+    {
+      promptText: '최근 내 강점이 잘 드러났던 순간이 있다면?',
+      placeholder: '사소한 일이어도 괜찮아요. 한 줄만 남겨둘까요.',
+    },
+    {
+      promptText: '요즘 내가 꽤 잘 해냈다고 느낀 일은 무엇인가요?',
+      placeholder: '작은 마무리 하나만 떠올려 적어보세요.',
+    },
+    {
+      promptText: '최근 누군가에게 도움이 되었던 내 행동이 있나요?',
+      placeholder: '거창하지 않아도 돼요. 짧은 기억이면 충분해요.',
+    },
+    {
+      promptText: '어려운 상황에서도 나답게 버텨낸 순간이 있다면?',
+      placeholder: '그때 나를 지탱해 준 한 가지를 적어보세요.',
+    },
+  ],
+  future_action: [
+    {
+      promptText: '오늘 살려보고 싶은 내 강점과 작은 행동은?',
+      placeholder: '거창하지 않아도 돼요. 오늘 해볼 딱 한 가지만 적어보세요.',
+    },
+    {
+      promptText: '오늘 나에게 꼭 필요한 가장 작은 한 걸음은?',
+      placeholder: '5분 안에 끝낼 수 있는 일이어도 좋아요.',
+    },
+    {
+      promptText: '지금 마음을 조금 가볍게 해줄 다음 행동은 무엇인가요?',
+      placeholder: '물 한 잔, 짧은 산책처럼 가벼운 일부터 적어보세요.',
+    },
+    {
+      promptText: '오늘 하루를 마칠 때 기분 좋을 작은 약속 하나는?',
+      placeholder: '무리 없는 선에서 한 가지만 정해볼까요.',
+    },
+  ],
+  self_compassion: [
+    {
+      promptText: '오늘 하루를 보낸 나에게 건네고 싶은 말은?',
+      placeholder: '고생한 나에게 짧게 한 마디 남겨두세요.',
+    },
+    {
+      promptText: '지금의 나에게 가장 다정한 친구라면 뭐라고 말해줄까요?',
+      placeholder: '그 말 한 줄을 그대로 옮겨 적어보세요.',
+    },
+    {
+      promptText: '요즘 애쓰고 있는 나에게 잠깐 내려놓아도 된다고 말한다면?',
+      placeholder: '오늘만큼은 덜어두고 싶은 부담을 적어보세요.',
+    },
+    {
+      promptText: '완벽하지 않았어도 괜찮았던 오늘의 순간이 있나요?',
+      placeholder: '충분히 잘 지나온 장면을 짧게 남겨둘까요.',
+    },
+  ],
+  gratitude: [
+    {
+      promptText: '요즘 작게라도 고마웠던 일이나 사람이 있나요?',
+      placeholder: '떠오르는 순간을 가볍게 기록해 보세요.',
+    },
+    {
+      promptText: '오늘 우연히 기분이 조금 나아졌던 장면이 있다면?',
+      placeholder: '날씨, 커피, 짧은 대화처럼 사소한 것도 좋아요.',
+    },
+    {
+      promptText: '요즘 당연하게 지나쳤지만 고마운 일상이 있나요?',
+      placeholder: '내 곁에 조용히 있어준 것 하나를 적어보세요.',
+    },
+    {
+      promptText: '최근 누군가의 작은 배려가 기억에 남았던 순간은?',
+      placeholder: '짧은 인사나 도움 하나만 떠올려 볼까요.',
+    },
+  ],
+};
+
+export const RITUAL_PROMPTS: Record<RitualPromptType, RitualPromptEntry> = {
+  strength_recall: RITUAL_PROMPT_POOL.strength_recall[0],
+  future_action: RITUAL_PROMPT_POOL.future_action[0],
+  self_compassion: RITUAL_PROMPT_POOL.self_compassion[0],
+  gratitude: RITUAL_PROMPT_POOL.gratitude[0],
+};
+
+export function getBookRitualPrompt(book: {
+  readonly seed: number;
+  readonly defaultPromptType: RitualPromptType;
+}): RitualPromptEntry {
+  let h = (book.seed ^ 0x9e3779b1) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  const pool = RITUAL_PROMPT_POOL[book.defaultPromptType];
+  return pool[h % pool.length];
+}
 
 /** 정규화 칸 좌표 비율 (docs/CONTRACTS.md 4.1절) */
 export const COMPARTMENT_SIDE_MARGIN = 0.03;
