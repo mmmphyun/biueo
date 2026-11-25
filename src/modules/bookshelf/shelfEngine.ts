@@ -1,6 +1,20 @@
 import { DESK_THEMES } from '../../shared/theme/deskThemes';
 import { drawDeskPaperBackground } from '../../shared/canvas/deskBackdrop';
+import { createFoleySynth } from './audio/foleySynth';
 import { SHELF_WOOD_COLORS } from './data/bookPalette';
+import {
+  createCompartmentSparklePulse,
+  createOrderCelebration,
+  drawCompartmentSparklePulse,
+  drawOrderCelebration,
+  type CompartmentSparklePulse,
+  type OrderCelebration,
+} from './order/orderCelebration';
+import {
+  detectLiveCompartmentOrders,
+  detectShelfOrders,
+  getOrderRewardTier,
+} from './order/orderDetector';
 import type {
   BookModel,
   DeskThemeId,
@@ -104,7 +118,9 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   let activeDrag: ActivePointerDrag | null = null;
   let insertionPreview: InsertionPreview | null = null;
 
-  // 시각 흔들림, 걸쇠 흔들림, 정돈 완료 크림빛 글로우
+  const foley = createFoleySynth();
+
+  // 시각 흔들림, 걸쇠 흔들림, 정돈 완료 파스텔 웨이브·글로우
   let frameShakeX = 0;
   let frameShakeY = 0;
   let frameShakeVx = 0;
@@ -116,7 +132,8 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   let shakeSessionCounter = 0;
   let latchWiggleTimer = 0;
   let latchGlintTimer = 0;
-  let completionGlowTimer = 0;
+  let activeCelebration: OrderCelebration | null = null;
+  let liveCompartmentPulses: CompartmentSparklePulse[] = [];
   let hasUserInteracted = false;
   let idleCueTimeoutId: number | null = null;
 
@@ -459,15 +476,12 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
         latchGlintTimer > 0 ? Math.sin((latchGlintTimer / 0.9) * Math.PI) : 0;
       drawBrassLatch(ctx, layout, isDoorOpen, latchHovered, wiggleAngle, glintStrength);
 
-      // 정돈 완료 크림빛 숨결 글로우 (Tier 0, 0.45s)
-      if (completionGlowTimer > 0) {
-        const p = completionGlowTimer / 0.45;
-        const alpha = Math.sin(p * Math.PI) * 0.36;
-        ctx.save();
-        ctx.fillStyle = `rgba(255, 250, 236, ${alpha.toFixed(3)})`;
-        traceOrganicRect(ctx, frameRect.x, frameRect.y, frameRect.w, frameRect.h, 9, 0.4, 404);
-        ctx.fill();
-        ctx.restore();
+      // 정리 중 개별 칸 질서 펄스 및 정돈 완료 순수 감각 연출 (Tier 0-3)
+      for (const pulse of liveCompartmentPulses) {
+        drawCompartmentSparklePulse(ctx, pulse, layout, prefersReducedMotion());
+      }
+      if (activeCelebration) {
+        drawOrderCelebration(ctx, activeCelebration, layout, prefersReducedMotion());
       }
 
       ctx.restore(); // frameShake 해제 후 데스크 위 책들은 고정 좌표에 그린다.
@@ -597,11 +611,16 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       volume &&
       layout
     ) {
+      activeCelebration = null;
+      liveCompartmentPulses = [];
       shakeSessionCounter += 1;
       chaosWorld?.dispose();
-      chaosWorld = new ChaosWorld(layout.innerRect);
+      chaosWorld = new ChaosWorld(layout.innerRect, (impactSpeed) =>
+        foley.playCollision(impactSpeed)
+      );
       chaosWorld.spawnSeatedPoses(buildClosedShelfSpawnList(), shakeSessionCounter);
       shelfState = 'SHAKING_CHAOS';
+      foley.playShakeRattle(Math.min(1, accelMag / 4500));
       emitSnapshot();
     }
 
@@ -615,12 +634,31 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       keepAnimating = true;
     }
 
-    if (completionGlowTimer > 0) {
-      completionGlowTimer = Math.max(0, completionGlowTimer - dtSec);
-      keepAnimating = true;
+    if (liveCompartmentPulses.length > 0) {
+      const remaining: CompartmentSparklePulse[] = [];
+      for (const pulse of liveCompartmentPulses) {
+        pulse.elapsedSec += dtSec;
+        if (pulse.elapsedSec < pulse.totalDurationSec) {
+          remaining.push(pulse);
+        }
+      }
+      liveCompartmentPulses = remaining;
+      if (remaining.length > 0) keepAnimating = true;
+    }
+
+    if (activeCelebration) {
+      activeCelebration.elapsedSec += dtSec;
+      if (activeCelebration.elapsedSec >= activeCelebration.totalDurationSec) {
+        activeCelebration = null;
+      } else {
+        keepAnimating = true;
+      }
     }
 
     if (shelfState === 'SHAKING_CHAOS' && chaosWorld) {
+      if (isHoldingFrame && accelMag > 2600) {
+        foley.playShakeRattle(Math.min(1, accelMag / 6500));
+      }
       chaosWorld.applyFrameShakeMotion(
         frameAx,
         frameAy,
@@ -753,16 +791,21 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     if (!volume || !layout) return;
     if (shelfState !== 'LOCKED_NEAT' && shelfState !== 'SHAKING_CHAOS') return;
     markUserInteracted();
+    activeCelebration = null;
+    liveCompartmentPulses = [];
 
     if (shelfState === 'LOCKED_NEAT') {
       shakeSessionCounter += 1;
       chaosWorld?.dispose();
-      chaosWorld = new ChaosWorld(layout.innerRect);
+      chaosWorld = new ChaosWorld(layout.innerRect, (impactSpeed) =>
+        foley.playCollision(impactSpeed)
+      );
       chaosWorld.spawnSeatedPoses(buildClosedShelfSpawnList(), shakeSessionCounter);
       shelfState = 'SHAKING_CHAOS';
       emitSnapshot();
     }
 
+    foley.playShakeRattle(Math.min(1, Math.hypot(vx, vy) / 14));
     chaosWorld?.applyButtonShakeBurst(vx, vy);
 
     const amp = prefersReducedMotion() ? 0.3 : 1;
@@ -781,10 +824,13 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   const toggleDoor = () => {
     if (!volume || !layout) return;
     markUserInteracted();
+    foley.unlock();
 
     if (shelfState === 'LOCKED_NEAT') {
       // 닫힌 상태에서 열 때는 데스크에 남아있던 책들의 좌표를 보존한 채 문만 연다.
+      activeCelebration = null;
       shelfState = 'OPEN_TIDYING';
+      foley.playDoorLatch(true);
       if (poses.size === 0) {
         poses = buildNeatPoses(volume.books, layout);
       } else {
@@ -797,6 +843,8 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     }
 
     if (shelfState === 'SHAKING_CHAOS') {
+      activeCelebration = null;
+      foley.playDoorLatch(true);
       frameTargetX = 0;
       frameTargetY = 0;
       const alreadyUnplacedPoses = new Map<string, KinematicBookPose>();
@@ -910,6 +958,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       const hasUnplaced = volume.books.some((b) => b.placement === null);
 
       isSpillingToDesk = false;
+      liveCompartmentPulses = [];
       chaosWorld?.dispose();
       chaosWorld = null;
       shelfState = 'LOCKED_NEAT';
@@ -917,13 +966,29 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       insertionPreview = null;
       hoveredBookId = null;
       syncTargetsFromPlacements(volume.books, poses, layout, null, null);
+      foley.playDoorLatch(false);
+
+      let detectedOrders: ReturnType<typeof detectShelfOrders> = [];
       if (!hasUnplaced) {
-        completionGlowTimer = 0.45;
+        detectedOrders = detectShelfOrders(
+          volume.books,
+          layout.renderCols,
+          layout.renderRows
+        );
+        const tier = getOrderRewardTier(detectedOrders);
+        activeCelebration = createOrderCelebration(
+          detectedOrders,
+          prefersReducedMotion()
+        );
+        foley.playOrderReward(tier);
+      } else {
+        activeCelebration = null;
       }
+
       callbacks.onShelfCommit(cloneBooksForCommit());
       emitSnapshot();
       if (!hasUnplaced) {
-        callbacks.onTidyComplete([]);
+        callbacks.onTidyComplete(detectedOrders);
       }
       requestRedraw();
     }
@@ -981,7 +1046,9 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
             },
           ];
         });
-      chaosWorld = new ChaosWorld(deskBounds);
+      chaosWorld = new ChaosWorld(deskBounds, (impactSpeed) =>
+        foley.playCollision(impactSpeed)
+      );
       chaosWorld.enterDeskDropMode(layout.viewportW, layout.viewportH, restingPoses);
     }
 
@@ -1026,6 +1093,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   const handlePointerDown = (e: PointerEvent) => {
     if (!canvas || !layout || !volume) return;
     markUserInteracted();
+    foley.unlock();
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
@@ -1151,6 +1219,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       const dist = Math.hypot(px - drag.downX, py - drag.downY);
       if (!drag.isDraggingBook && dist >= 6) {
         drag.isDraggingBook = true;
+        foley.playBookPickup();
         chaosWorld?.removeBody(targetBookId);
         const grabbedBook = volume.books.find((b) => b.id === targetBookId);
         if (grabbedBook?.placement) {
@@ -1246,6 +1315,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
         const duration = performance.now() - drag.downTimeMs;
         canvas.style.cursor = hoveredBookId === drag.bookId ? 'grab' : 'default';
         if (isShortTap(drag.downX, drag.downY, px, py, duration)) {
+          foley.playPageFlip();
           callbacks.onBookTap(drag.bookId);
         }
         return;
@@ -1256,16 +1326,30 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       const book = volume.books.find((b) => b.id === drag.bookId);
       if (pose && book) {
         if (insertionPreview) {
+          const targetCompIdx = insertionPreview.compartmentIndex;
+          const beforeLiveKinds = new Set(
+            detectLiveCompartmentOrders(volume.books, targetCompIdx)
+          );
           commitBookPlacement(
             volume.books,
             drag.bookId,
-            insertionPreview.compartmentIndex,
+            targetCompIdx,
             insertionPreview.insertIndex,
             insertionPreview.slotNormX
           );
           pose.targetScale = 1;
           insertionPreview = null;
           syncTargetsFromPlacements(volume.books, poses, layout, null, null);
+          foley.playBookSnap(book.thicknessTier);
+
+          const afterLiveKinds = detectLiveCompartmentOrders(volume.books, targetCompIdx);
+          if (afterLiveKinds.some((kind) => !beforeLiveKinds.has(kind))) {
+            liveCompartmentPulses = [
+              ...liveCompartmentPulses.filter((p) => p.compartmentIndex !== targetCompIdx),
+              createCompartmentSparklePulse(targetCompIdx, prefersReducedMotion()),
+            ];
+            foley.playCompartmentOrderChime();
+          }
         } else {
           // 칸 밖이나 꽉 찬 칸 위에서 놓으면 현재 위치에서 중력을 받아 데스크로 떨어진다.
           commitBookPlacement(volume.books, drag.bookId, null);
@@ -1317,6 +1401,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     if (e.code === 'Enter') {
       e.preventDefault();
       markUserInteracted();
+      foley.unlock();
       toggleDoor();
       return;
     }
@@ -1326,6 +1411,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
 
     e.preventDefault();
     markUserInteracted();
+    foley.unlock();
     if (!spaceHeld) {
       spaceHeld = true;
       spacePulseTimerMs = 0;
@@ -1392,6 +1478,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     themeId = prefs.theme;
     tuning = { ...prefs.tuning };
     motionShakeEnabled = prefs.motionShakeEnabled;
+    foley.setEnabled(prefs.audioEnabled);
     if (!tiles) tiles = createPaperNoiseTiles(1337);
 
     const hasUnplaced = volume.books.some((b) => b.placement === null);
@@ -1443,11 +1530,14 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     window.removeEventListener('keyup', handleKeyUp);
     window.removeEventListener('devicemotion', handleDeviceMotion);
     isSpillingToDesk = false;
+    activeCelebration = null;
+    liveCompartmentPulses = [];
     frameTargetX = 0;
     frameTargetY = 0;
     frameShakeAngle = 0;
     chaosWorld?.dispose();
     chaosWorld = null;
+    foley.dispose();
     if (rafId !== null) {
       window.cancelAnimationFrame(rafId);
       rafId = null;
@@ -1458,6 +1548,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   const pause = () => {
     paused = true;
     spaceHeld = false;
+    foley.pause();
     if (rafId !== null) {
       window.cancelAnimationFrame(rafId);
       rafId = null;
@@ -1467,6 +1558,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   const resume = () => {
     if (!paused) return;
     paused = false;
+    foley.resume();
     requestRedraw();
   };
 
@@ -1478,6 +1570,8 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     hasUserInteracted = false;
     latchGlintTimer = 0;
     latchWiggleTimer = 0;
+    activeCelebration = null;
+    liveCompartmentPulses = [];
     isSpillingToDesk = false;
     frameTargetX = 0;
     frameTargetY = 0;
@@ -1528,8 +1622,8 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     requestRedraw();
   };
 
-  const setAudioEnabled = (_enabled: boolean) => {
-    // Phase 2 Web Audio 폴리 엔진 연결 예정
+  const setAudioEnabled = (enabled: boolean) => {
+    foley.setEnabled(enabled);
   };
 
   const setMotionShakeEnabled = (enabled: boolean) => {
