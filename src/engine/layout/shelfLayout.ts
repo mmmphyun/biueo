@@ -243,6 +243,62 @@ export function computeBookSlotNormX(
   return resolveCompartmentNormX(requests);
 }
 
+export const MAX_BOOK_FALL_ANGLE_RAD = (86 * Math.PI) / 180;
+export const MIN_TIP_CLEARANCE_RATIO = 0.24;
+
+export interface CompartmentBookPose {
+  readonly bookId: string;
+  readonly centerX: number;
+  readonly centerY: number;
+  readonly widthPx: number;
+  readonly heightPx: number;
+  readonly angleRad: number;
+  readonly fallenDir?: -1 | 1;
+}
+
+export function computeMaxTipAngleRad(
+  uprightRect: Rect,
+  dir: -1 | 1,
+  stopWallX: number
+): number {
+  const wallPadPx = 2;
+  const available =
+    dir === 1
+      ? Math.max(0, stopWallX - wallPadPx - (uprightRect.x + uprightRect.w))
+      : Math.max(0, uprightRect.x - (stopWallX + wallPadPx));
+  const sinMax = clamp(available / Math.max(1, uprightRect.h), 0, 1);
+  return Math.min(MAX_BOOK_FALL_ANGLE_RAD, Math.asin(sinMax));
+}
+
+export function computeTippedBookTransform(
+  uprightRect: Rect,
+  dir: -1 | 1,
+  angleAbsRad: number
+): { readonly centerX: number; readonly centerY: number; readonly angleRad: number } {
+  const w = uprightRect.w;
+  const h = uprightRect.h;
+  const floorY = uprightRect.y + h;
+  const theta = clamp(angleAbsRad, 0, MAX_BOOK_FALL_ANGLE_RAD);
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+
+  if (dir === 1) {
+    const px = uprightRect.x + w;
+    return {
+      centerX: px - w * 0.5 * cos + h * 0.5 * sin,
+      centerY: floorY - w * 0.5 * sin - h * 0.5 * cos,
+      angleRad: theta,
+    };
+  }
+
+  const px = uprightRect.x;
+  return {
+    centerX: px + w * 0.5 * cos - h * 0.5 * sin,
+    centerY: floorY - w * 0.5 * sin - h * 0.5 * cos,
+    angleRad: -theta,
+  };
+}
+
 export function computeBookSlotRects(
   booksInCompartment: readonly BookModel[],
   compartment: CompartmentRect
@@ -266,6 +322,127 @@ export function computeBookSlotRects(
   }
 
   return result;
+}
+
+/**
+ * 칸 내부 책들의 최종 렌더 포즈(기립 또는 벽·이웃·도미노 한계에 닿은 쓰러짐)를 계산한다.
+ */
+export function computeCompartmentBookPoses(
+  booksInCompartment: readonly BookModel[],
+  compartment: CompartmentRect
+): Map<string, CompartmentBookPose> {
+  const ordered = [...booksInCompartment].sort(
+    (a, b) =>
+      (a.placement?.orderInCompartment ?? 0) - (b.placement?.orderInCompartment ?? 0)
+  );
+  const rects = computeBookSlotRects(ordered, compartment);
+  const resolvedAngleAbs = new Map<string, number>();
+
+  // 우측 쓰러짐(dir = 1)은 우측 벽·이웃 책 기준으로 우->좌 순서로 각도를 확정한다.
+  for (let i = ordered.length - 1; i >= 0; i -= 1) {
+    const book = ordered[i];
+    if (book.placement?.fallenDir !== 1) continue;
+    const rect = rects.get(book.id);
+    if (!rect) continue;
+
+    const wallRight = compartment.x + compartment.w;
+    let stopWallX = wallRight;
+    let dominoCap = MAX_BOOK_FALL_ANGLE_RAD;
+
+    if (i + 1 < ordered.length) {
+      const nextBook = ordered[i + 1];
+      const nextRect = rects.get(nextBook.id);
+      const nextDir = nextBook.placement?.fallenDir;
+      if (nextRect) {
+        if (nextDir === undefined) {
+          stopWallX = nextRect.x;
+        } else if (nextDir === -1) {
+          stopWallX = (rect.x + rect.w + nextRect.x) * 0.5;
+        } else {
+          const nextAngle = resolvedAngleAbs.get(nextBook.id) ?? 0;
+          if (nextAngle < 0.38) {
+            stopWallX = nextRect.x;
+          } else {
+            stopWallX = wallRight;
+            dominoCap = Math.max(0.28, nextAngle - 0.16);
+          }
+        }
+      }
+    }
+
+    const wallAngle = computeMaxTipAngleRad(rect, 1, stopWallX);
+    resolvedAngleAbs.set(book.id, Math.min(wallAngle, dominoCap));
+  }
+
+  // 좌측 쓰러짐(dir = -1)은 좌측 벽·이웃 책 기준으로 좌->우 순서로 각도를 확정한다.
+  for (let i = 0; i < ordered.length; i += 1) {
+    const book = ordered[i];
+    if (book.placement?.fallenDir !== -1) continue;
+    const rect = rects.get(book.id);
+    if (!rect) continue;
+
+    const wallLeft = compartment.x;
+    let stopWallX = wallLeft;
+    let dominoCap = MAX_BOOK_FALL_ANGLE_RAD;
+
+    if (i - 1 >= 0) {
+      const prevBook = ordered[i - 1];
+      const prevRect = rects.get(prevBook.id);
+      const prevDir = prevBook.placement?.fallenDir;
+      if (prevRect) {
+        if (prevDir === undefined) {
+          stopWallX = prevRect.x + prevRect.w;
+        } else if (prevDir === 1) {
+          stopWallX = (prevRect.x + prevRect.w + rect.x) * 0.5;
+        } else {
+          const prevAngle = resolvedAngleAbs.get(prevBook.id) ?? 0;
+          if (prevAngle < 0.38) {
+            stopWallX = prevRect.x + prevRect.w;
+          } else {
+            stopWallX = wallLeft;
+            dominoCap = Math.max(0.28, prevAngle - 0.16);
+          }
+        }
+      }
+    }
+
+    const wallAngle = computeMaxTipAngleRad(rect, -1, stopWallX);
+    resolvedAngleAbs.set(book.id, Math.min(wallAngle, dominoCap));
+  }
+
+  const poses = new Map<string, CompartmentBookPose>();
+  for (const book of ordered) {
+    const rect = rects.get(book.id);
+    if (!rect) continue;
+    const dir = book.placement?.fallenDir;
+    if (dir === -1 || dir === 1) {
+      const angleAbs = resolvedAngleAbs.get(book.id) ?? 0;
+      if (angleAbs > 0.02) {
+        const tf = computeTippedBookTransform(rect, dir, angleAbs);
+        poses.set(book.id, {
+          bookId: book.id,
+          centerX: tf.centerX,
+          centerY: tf.centerY,
+          widthPx: rect.w,
+          heightPx: rect.h,
+          angleRad: tf.angleRad,
+          fallenDir: dir,
+        });
+        continue;
+      }
+    }
+
+    poses.set(book.id, {
+      bookId: book.id,
+      centerX: rect.x + rect.w * 0.5,
+      centerY: rect.y + rect.h * 0.5,
+      widthPx: rect.w,
+      heightPx: rect.h,
+      angleRad: getBookOrganicLeanRad(book.seed),
+    });
+  }
+
+  return poses;
 }
 
 /**

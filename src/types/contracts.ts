@@ -52,6 +52,8 @@ export interface ShelfSlotPlacement {
   orderInCompartment: number;
   /** 칸 내부 정규화 좌측 x 좌표 ([COMPARTMENT_SIDE_MARGIN .. 1 - COMPARTMENT_SIDE_MARGIN - widthNorm]) */
   normX?: number;
+  /** 칸 내부 쓰러짐 방향 (-1: 좌측, 1: 우측, undefined: 기립 상태) */
+  fallenDir?: -1 | 1;
 }
 
 export interface BookModel {
