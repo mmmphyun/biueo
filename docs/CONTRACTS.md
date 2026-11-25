@@ -177,8 +177,9 @@ export interface DetectedOrder {
 
 export interface ShelfEngineSnapshot {
   readonly state: ShelfState;
-  readonly shelvedCount: number; // 0-36
-  readonly writtenCount: number; // 0-36
+  readonly shelvedCount: number; // 0-36 (또는 0-60)
+  readonly totalCount: number;   // 36 또는 60
+  readonly writtenCount: number; // 0-36 (또는 0-60)
   readonly isDoorOpen: boolean;
 }
 
@@ -252,7 +253,7 @@ export interface ShelfEngineController {
 2. **흔들기 트리거**:
    - **2.5D 전도-미끄러짐 경쟁**: 닫힌 유리문 흔들기 중 각 책은 스칼라 깊이(`depthZ`)와 종횡비(`w/h`) 기반 전도 임계치를 경쟁합니다. 수평 가속도·기울기로 먼저 쓰러진 책은 칸 내부 벽·이웃 한계 각도에 멈추며, 수직·지속 흔들림으로 `depthZ`가 한계를 넘으면 밖으로 이탈합니다.
    - **프레임 직접 잡기 흔들기**: 닫힌 유리문 상태(`LOCKED_NEAT` / `SHAKING_CHAOS`)에서만 책장 프레임 클릭·드래그를 허용(`OPEN_TIDYING`에서는 개별 책 조작 보호를 위해 비활성화)합니다. 책장은 포인터를 스프링으로 추적하며 이동 속도에 비례해 기울고, 가속도 반대 관성력(`-a`)·기울기 중력을 주입해 흔들림 세기에 맞춰 책들을 점진적으로 쓰러뜨리거나 풀어 떨어뜨립니다.
-   - **키보드 / 버튼**: `흔들기` 버튼 및 `Space` 홀드(`140ms` 간격)도 동일한 2.5D 전도-미끄러짐 버스트를 순차 주입해 쓰러짐과 이탈이 함께 발생하며, 반복 흔들기로 쓰러진 책까지 추가 배출할 수 있습니다(`prefers-reduced-motion: reduce` 시 시각 흔들림 진폭 30% 축소).
+   - **키보드 / 내부 API**: `Space` 홀드(`140ms` 간격) 및 내부 `triggerShake()` API(하단 흔들기 버튼은 제거됨)도 동일한 2.5D 전도-미끄러짐 버스트를 순차 주입해 쓰러짐과 이탈이 함께 발생하며, 반복 흔들기로 쓰러진 책까지 추가 배출할 수 있습니다(`prefers-reduced-motion: reduce` 시 시각 흔들림 진폭 30% 축소). `Enter` 키 또는 황동 걸쇠 클릭으로 문을 열고 닫습니다.
    - **모바일 가속도계**: 명시적 버튼 클릭으로 `DeviceMotionEvent.requestPermission()` 획득 후, 선형 가속도 크기 `sqrt(ax² + ay² + az²) > 15 m/s²` 감지 시 180ms 디바운스로 임펄스 주입.
 3. **Matter.js 터널링 방어 (Chaos Mode)**:
    - 책장 외곽 불가시 벽 두께 `>= 120px`.
@@ -265,6 +266,7 @@ export interface ShelfEngineController {
    - `SHAKING_CHAOS -> OPEN_TIDYING`: `ChaosWorld`에서 실제 이탈한 책(`dislodged > 0`)만 배치를 해제하고 외곽 물리 벽을 안전 데스크 영역(`x: 18..viewportW-18`, `y: 24..viewportH-86`)으로 확장해 연속 쏟아짐을 실행합니다. 아직 칸에 남아 있는 책은 제자리에 유지되며, 이탈한 책이 0권이면 일반 정돈 상태 열림으로 전환합니다.
    - `OPEN_TIDYING` 중 유효한 칸 밖에서 드래그를 놓으면 허공 고정 없이 `desk_drop` 모드의 중력 낙하·휴면 책 충돌을 거쳐 자연스럽게 떨어져 정지합니다.
    - `LOCKED_NEAT -> OPEN_TIDYING`: 흔들지 않고 정돈된 상태에서 걸쇠를 열면 전권이 제자리에 조용히 머물러 사용자가 특정 책만 탭해 읽거나 일부만 재배치할 수 있습니다.
+   - **부분 배치 문 닫기 자유화 (`OPEN_TIDYING -> LOCKED_NEAT`)**: 미배치 책이 데스크에 남아 있어도 언제든 걸쇠를 닫을 수 있으며, 데스크 책은 위치·각도를 유지한 채 보존됩니다. 단, `onTidyComplete` 및 Tier 0-3 순수 감각 보상은 전 책이 꽂힌 상태(`shelvedCount === totalCount`)에서 잠글 때만 발동합니다.
 
 ---
 
@@ -302,10 +304,8 @@ export interface ShelfEngineController {
 3. **`self_compassion` (자기격려)**: `"오늘 하루를 보낸 나에게 건네고 싶은 말은?"` 외 3종
 4. **`gratitude` (작은 감사)**: `"요즘 작게라도 고마웠던 일이나 사람이 있나요?"` 외 3종
 
-### 7.2 1회성 상황별 유령 힌트 (조작 즉시 영구 소멸)
-- `shakeOrUnlatch`: `"책장을 흔들어 비우거나, 오른쪽 걸쇠를 열어보세요"`
-- `dragOrTapBook`: `"책을 끌어다 꽂거나, 짧게 눌러 페이지를 펼쳐보세요"`
-- `closeLatch`: `"정리가 끝나면 오른쪽 걸쇠를 눌러 문을 닫아보세요"`
+### 7.2 비언어 어포던스 (텍스트 유령 힌트 폐기)
+하단 `GhostHint.tsx` 및 1회성 텍스트 유령 힌트 문자열은 제거했으며, 초기 `2.5s` 유휴 미세 흔들림·황동 걸쇠 반짝임(Glint)·통합 손 커서(`grab`/`grabbing`)·완결 시(`36/36` 또는 `60/60`) 걸쇠 흔들림으로 조작을 안내합니다. 미배치 책이 남았을 때만 하단에 비대화형 `{shelved} / {total}` 카운터를 표시하며, `UserPreferences.hintsSeen`은 v1 저장 스키마 호환성 유지를 위해서만 보존합니다.
 
 ### 7.3 논문 근거 모달 고정 출처 (5편)
 1. Holmes, E. A., James, E. L., Coode-Bate, T., & Deeprose, C. (2009). *Can Playing the Computer Game "Tetris" Reduce the Build-Up of Flashbacks for Trauma?* PLoS ONE, 4(1), e4153. (후속: Holmes et al., 2010, PLoS ONE — 시공간 과제 vs 언어 과제 비교)

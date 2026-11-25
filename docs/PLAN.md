@@ -21,7 +21,7 @@
 3. **100% 개인 로컬 도구**: 계정·서버 통신·타인 피드 없이 브라우저 `IndexedDB`에 저장하고, JSON 내보내기/불러오기로 백업합니다.
 4. **반응형 `3×3` 기본 + `5×3` 대형 프리셋 & 모바일 터치 보정**: 기본 서가는 `3×3`(9칸·36권), 대형 프리셋은 `5×3`(15칸·60권)으로 제공하며, 볼륨 생성 시 크기를 고정합니다. 모바일 세로 화면에서는 `5×3`을 자동으로 **`3×5`(3열 5행)로 전치**해 칸 폭을 유지하고, 터치 입력에는 **28px 근접 자석 선택**과 드래그 중 **손가락 위쪽 `-48px` 들림 오프셋**을 적용합니다.
 5. **무실패 계층 감지 + 순수 감각 보상**: 오답 판정과 슬롯 거부를 전면 배제합니다. 칸(4권)·행(12권)·전체(36권)의 5종 질서를 감지하되, 텍스트 라벨·점수·배지 없이 **파스텔 반짝임과 화음 변화**로만 보상합니다.
-6. **무랜딩 즉시 진입 + `?` 버튼 도움말 통일 + 1회성 유령 힌트**: 랜딩 페이지와 첫 접속 자동 모달을 모두 두지 않습니다. 도움말(조작법·검증 논문)은 첫 접속부터 상시 모서리 `?` 버튼으로만 열며, 첫 조작 전까지만 비차단 1줄 유령 힌트를 표시했다 즉시 영구 소멸합니다.
+6. **무랜딩 즉시 진입 + `?` 버튼 도움말 통일 + 무언어 어포던스(유령 힌트·하단 버튼 제거)**: 랜딩 페이지·첫 접속 자동 모달·하단 텍스트 유령 힌트(`GhostHint`)·하단 `흔들기`/`문 열기` 버튼을 모두 두지 않습니다. 도움말(조작법·검증 논문)은 상시 모서리 `?` 버튼으로만 열며, 초기 `2.5s` 유휴 미세 흔들림·황동 걸쇠 반짝임(Glint)·통합 손 커서(`grab`/`grabbing`)로 조작을 암시합니다. 미배치 책이 있을 때만 하단에 비대화형 `{shelved} / {total}` 카운터를 조용히 표시합니다.
 7. **유리문 열림 물리 분기**: 흔든 뒤(`SHAKING_CHAOS`) 걸쇠를 열면 무너진 책들이 데스크 여백으로 자동 쏟아져 펼쳐지며, 흔들지 않고 정돈 상태(`LOCKED_NEAT`)에서 걸쇠를 열면 책들이 제자리에 머물러 바로 열람·부분 정리가 가능합니다.
 8. **추후 다중 콘텐츠 진입 규칙 (v1 스키마만 예약)**: 2차 콘텐츠 추가 시 고유 경로(`/shelf` 등)와 기본 개방을 보장하며, 재방문은 직전 공간(`lastActiveModuleId`)을 복원하되 수동 랜덤 전환 버튼과 설정의 `openRandomOnVisit`(접속 시 랜덤 진입 옵트인)을 제공합니다. 36/36 완결 시에는 Soft Fork 전환 분기를 제공합니다.
 9. **v1 한국어 단일 + 담백한 구어체**: 초기 운영은 한국어에 집중하고, 리츄얼 질문은 부담 없는 짧은 구어체로 통일합니다.
@@ -59,7 +59,11 @@
 ## 4. Visual Design System (*A Little to the Left* 4장 레퍼런스 기준)
 
 - **화풍**: 무외곽선 과슈·리소그래프(Lineless Gouache / Risograph). 검은 외곽선·빗금 해칭 없음.
-- **바탕 테마 4종**: `sage`(`#C7E1B6`), `slate`(`#8F9FA9`), `lavender`(`#7E7E9A`), `charcoal`(`#323C42`).
+- **바탕 테마 8종 (라이트·다크 큐레이션)**:
+  - Light 4종: `sage` (`#C7E1B6`), `slate` (`#8F9FA9`), `lavender` (`#9393AE`), `mist` (`#CFD8DF`).
+  - Dark 4종: `charcoal` (`#323C42`), `pine` (`#2A3B36`), `dusk` (`#383447`), `umber` (`#3F352E`).
+  - 전 테마 WCAG AA `>= 4.5:1` 대비를 검증하며, OS `prefers-color-scheme`와 동기화하고 접속 시 직전 테마를 배제한 랜덤 전환을 적용합니다.
+- **타이포그래피 및 직인쇄 크롬**: 단일 산세리프 `IBM Plex Sans KR`, 무외곽선 직인쇄 크롬(`AppChrome`), 평면 그림자(`6px 8px 0`) 종이 시트 모달(`.paper-sheet-dialog`)을 사용합니다.
 - **원목 책장**: 자작나무·크림 우드(`#E5D2B5` / 음영 `#C8B08E` / 칸 바닥 `#F3ECE0`) + 황동 걸쇠(`#E2BE68`).
 - **책등 9색 팔레트**: `coral`, `salmon`, `butter`, `olive`, `sage`, `slate`, `oat`, `cream`, `charcoal` (`docs/CONTRACTS.md` 1절 참조).
 - **렌더링 규칙**: ±0.7px 손재단 미세 굴곡 + 2톤 면 분할 및 6종 기하학 무늬 + fBm 심리스 종이·초크 입자 프리베이킹 + 배경 어두운 단색 오프셋 그림자 + 대각선 흰 광택 띠 유리문 + Phase 1 보강(책등 ±1.2° 미세 기울기, 칸 모서리 점묘 음영).
@@ -72,16 +76,16 @@
 ```mermaid
 stateDiagram-v2
     [*] --> LOCKED_NEAT : 앱 로드 및 로컬 복원
-    LOCKED_NEAT --> SHAKING_CHAOS : 프레임 드래그 / 스페이스바 / 흔들기 버튼 / 가속도계
+    LOCKED_NEAT --> SHAKING_CHAOS : 프레임 직접 잡기 드래그 / 스페이스바 / 가속도계
     SHAKING_CHAOS --> SHAKING_CHAOS : Matter.js 밀폐 충돌 및 Web Audio 합성
     SHAKING_CHAOS --> OPEN_TIDYING : 걸쇠 클릭 시 책들이 여백으로 자동 쏟아짐
     LOCKED_NEAT --> OPEN_TIDYING : 걸쇠 클릭 시 책들이 제자리 유지
     OPEN_TIDYING --> BOOK_OPEN_MODAL : 책 짧은 탭 이동 6px 미만 및 220ms 미만
     BOOK_OPEN_MODAL --> OPEN_TIDYING : 닫기 또는 1페이지 로컬 저장
-    OPEN_TIDYING --> LOCKED_NEAT : 전 책 꽂힘 후 걸쇠 잠금 및 순수 감각 보상
+    OPEN_TIDYING --> LOCKED_NEAT : 걸쇠 클릭 또는 Enter로 언제든 잠금 (미배치 책 데스크 유지, 전 책 꽂힘 시 순수 감각 보상)
 ```
 
-- **모듈 경계**: `src/engine/`(순수 TS, React 무의존) ↔ `src/components/`(React 19 얇은 UI 셸) ↔ `src/storage/`(IndexedDB·JSON v1). 상세 시그니처는 `docs/CONTRACTS.md` 3절 참조.
+- **모듈 경계**: `src/shared/`(8종 테마·공용 캔버스·직인쇄 UI) + `src/modules/bookshelf/`(순수 TS 물리·배치·베이커·컨트롤러 및 책장 뷰) ↔ `src/storage/`(IndexedDB·JSON v1). 상세 시그니처는 `docs/CONTRACTS.md` 3절 참조.
 
 ---
 
@@ -93,8 +97,14 @@ stateDiagram-v2
 
 ---
 
-### Phase 1: Dual Physics Engine, Touch Ergonomics & Minimal Production Shell — [NEXT TARGET]
-**목표**: Phase 0 더미를 실제 흔들고·쏟고·자석 스냅으로 정리할 수 있는 인터랙티브 물리 책장으로 전환하고, Phase 0 튜닝 독을 실제 최소 HUD 및 `?` 도움말 `<dialog>`로 교체합니다.
+### Phase 1: Dual Physics Engine, Touch Ergonomics & Minimal Production Shell — [DONE / PASS — 후속 물리·UI·모듈화 고도화 포함]
+**목표**: Phase 0 더미를 실제 흔들고·쏟고·자석 스냅으로 정리할 수 있는 인터랙티브 물리 책장으로 전환하고, Phase 0 튜닝 독을 실제 최소 크롬 및 `?` 도움말 `<dialog>`로 교체합니다.
+
+> [!NOTE]
+> **후속 고도화 반영 사항 (`4f5dab5` 기준)**
+> - 기존 `src/engine/` 및 `src/data/`를 `src/modules/bookshelf/`로 이전하고, 공용 테마·캔버스 유틸·직인쇄 셸(`AppChrome`, `CanvasStageShell`, `PaperDialog`)을 `src/shared/`로 분리했습니다.
+> - 기존 `MinimalHud` 및 `GhostHint`를 제거하고, 통합 손 커서(`grab`/`grabbing`), 초기 `2.5s` 유휴 글린트, `Enter` 문 토글, 부분 배치 문 닫기 자유화, 2.5D 전도-미끄러짐 및 쓰러진 책 옆 자유 삽입을 완료했습니다.
+> - 8종 라이트/다크 랜덤 테마(`sage`, `slate`, `lavender`, `mist`, `charcoal`, `pine`, `dusk`, `umber`)와 16종 리츄얼 프롬프트 풀(`4축 × 4변형`)을 적용했습니다.
 
 #### 의존성 추가
 - `npm install matter-js` 및 `npm install -D @types/matter-js`
@@ -137,13 +147,13 @@ stateDiagram-v2
 ---
 
 ### Phase 2: Procedural Web Audio Foley & Pure-Sensory Order Detection
-- `src/engine/audio/foleySynth.ts`: Web Audio API 프로시저럴 폴리(충돌 속도 연동 나무·종이 마찰음, 자석 꽂기 묵직한 탭, 경첩·걸쇠 클릭, 책 넘김 소리, Tier 0-3 펜타토닉/Major 9th 화음).
-- `src/engine/order/orderDetector.ts`: 계층적 5종 질서 감지기(`hue`, `height`, `thickness`, `motif`, `written` with `3 <= written < 36` 가드) + Tier 0-3 파스텔 반짝임 웨이브 렌더링 + 포괄적 Vitest 단위 테스트.
+- `src/modules/bookshelf/audio/foleySynth.ts`: Web Audio API 프로시저럴 폴리(충돌 속도 연동 나무·종이 마찰음, 자석 꽂기 묵직한 탭, 경첩·걸쇠 클릭, 책 넘김 소리, Tier 0-3 펜타토닉/Major 9th 화음) + 지원 기기(Android 등) 한정 `navigator.vibrate` 점진적 햅틱(iOS Safari 미지원 한계 반영) + 상단/크롬 음소거 토글 연동.
+- `src/modules/bookshelf/order/orderDetector.ts`: 계층적 5종 질서 감지기(`hue`, `height`, `thickness`, `motif`, `written` with `3 <= written < 36` 가드) + Tier 0-3 파스텔 반짝임 웨이브 렌더링 + 포괄적 Vitest 단위 테스트.
 
 ---
 
 ### Phase 3: Tap-to-Open Local Ritual, Vol. 2 Expansion & IndexedDB / JSON Backup
-- `src/components/BookNoteDialog.tsx`: 네이티브 `<dialog>` 1페이지 포켓북(`closedby="any"` + Safari 폴백), 4종 담백한 구어체 프롬프트, 빈 저장 시 삭제(`null`), 저장 시 동적 책갈피 리본 재베이킹.
+- `src/modules/bookshelf/components/BookNoteDialog.tsx` (기존 읽기 전용 `BookPeekDialog.tsx` 대체/승격): 네이티브 `<dialog>` 1페이지 포켓북(`closedby="any"` + Safari 폴백), 4종 담백한 구어체 16문항 프롬프트, 빈 저장 시 삭제(`null`), 저장 시 동적 책갈피 리본 재베이킹.
 - `src/storage/db.ts` & `src/storage/backup.ts`: `biueo-db` v1 IndexedDB 영속화, 첫 기록 시 `navigator.storage.persist()` 호출, 36/36 완료 시 Vol. 2 생성 및 다중 볼륨 완전 동등 전환(중도 전환 시 미배치 책 복원), JSON Export/Import 검증 모달.
 - **선별 DOM 감사**: Phase 3 HTML `<dialog>` UI에 대해 `init-design-reference` Stage 2 기준(포커스 링, `>= 24×24px` 타깃, `>= 4.5:1` 대비) 검증 적용.
 
