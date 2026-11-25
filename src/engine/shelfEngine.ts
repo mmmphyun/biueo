@@ -14,6 +14,7 @@ import type {
 import {
   computeBookDimensions,
   computeBookSlotNormX,
+  computeBookSlotRects,
   computeShelfLayout,
   getBookOrganicLeanRad,
   type Rect,
@@ -110,6 +111,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   let frameTargetY = 0;
   let frameShakeAngle = 0;
   let shakeDirSign = 1;
+  let shakeSessionCounter = 0;
   let latchWiggleTimer = 0;
   let completionGlowTimer = 0;
 
@@ -368,12 +370,16 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       const refComp = layout.compartments[0];
       const activeBooks = volume.books;
       const drawChaosMap = (
-        poseMap: Map<string, { readonly x: number; readonly y: number; readonly angle: number }>
+        poseMap: Map<
+          string,
+          { readonly x: number; readonly y: number; readonly angle: number; readonly depthZ?: number }
+        >
       ) => {
         for (const book of activeBooks) {
           const bp = poseMap.get(book.id);
           if (!bp) continue;
           const dims = computeBookDimensions(book, refComp);
+          const creepScale = 1 + (bp.depthZ ?? 0) * 0.045;
           drawBookPose(
             ctx,
             {
@@ -381,13 +387,13 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
               x: bp.x,
               y: bp.y,
               angle: bp.angle,
-              scale: 1,
+              scale: creepScale,
               widthPx: dims.widthPx,
               heightPx: dims.heightPx,
               targetX: bp.x,
               targetY: bp.y,
               targetAngle: bp.angle,
-              targetScale: 1,
+              targetScale: creepScale,
             },
             true,
             false,
@@ -570,9 +576,10 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
       volume &&
       layout
     ) {
+      shakeSessionCounter += 1;
       chaosWorld?.dispose();
       chaosWorld = new ChaosWorld(layout.innerRect);
-      chaosWorld.spawnSeatedPoses(buildClosedShelfSpawnList());
+      chaosWorld.spawnSeatedPoses(buildClosedShelfSpawnList(), shakeSessionCounter);
       shelfState = 'SHAKING_CHAOS';
       emitSnapshot();
     }
@@ -673,16 +680,43 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   const buildClosedShelfSpawnList = () => {
     if (!volume || !layout) return [];
     const refComp = layout.compartments[0];
+    const uprightRectById = new Map<string, Rect>();
+
+    for (const comp of layout.compartments) {
+      const list = volume.books.filter((b) => b.placement?.compartmentIndex === comp.index);
+      if (list.length === 0) continue;
+      const rects = computeBookSlotRects(list, comp);
+      for (const [id, r] of rects) {
+        uprightRectById.set(id, r);
+      }
+    }
+
     return volume.books.map((book) => {
       const pose = poses.get(book.id);
       const dims = computeBookDimensions(book, refComp);
+      const compIdx = book.placement?.compartmentIndex;
+      const compRect = compIdx !== undefined ? layout!.compartments[compIdx] : undefined;
+      const uprightRect = uprightRectById.get(book.id);
+
       return {
         bookId: book.id,
-        centerX: pose?.x ?? layout!.innerRect.x + layout!.innerRect.w * 0.5,
-        centerY: pose?.y ?? layout!.innerRect.y + layout!.innerRect.h * 0.5,
-        widthPx: pose?.widthPx ?? dims.widthPx,
-        heightPx: pose?.heightPx ?? dims.heightPx,
+        centerX:
+          uprightRect
+            ? uprightRect.x + uprightRect.w * 0.5
+            : (pose?.x ?? layout!.innerRect.x + layout!.innerRect.w * 0.5),
+        centerY:
+          uprightRect
+            ? uprightRect.y + uprightRect.h * 0.5
+            : (pose?.y ?? layout!.innerRect.y + layout!.innerRect.h * 0.5),
+        widthPx: uprightRect?.w ?? pose?.widthPx ?? dims.widthPx,
+        heightPx: uprightRect?.h ?? pose?.heightPx ?? dims.heightPx,
         angleRad: pose?.angle ?? getBookOrganicLeanRad(book.seed),
+        ...(compIdx !== undefined && compRect
+          ? { compartmentIndex: compIdx, compartmentRect: compRect }
+          : {}),
+        ...(book.placement?.fallenDir !== undefined
+          ? { fallenDir: book.placement.fallenDir }
+          : {}),
       };
     });
   };
@@ -692,16 +726,15 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     if (shelfState !== 'LOCKED_NEAT' && shelfState !== 'SHAKING_CHAOS') return;
 
     if (shelfState === 'LOCKED_NEAT') {
+      shakeSessionCounter += 1;
       chaosWorld?.dispose();
       chaosWorld = new ChaosWorld(layout.innerRect);
-      chaosWorld.spawnFromPoses(buildClosedShelfSpawnList());
+      chaosWorld.spawnSeatedPoses(buildClosedShelfSpawnList(), shakeSessionCounter);
       shelfState = 'SHAKING_CHAOS';
       emitSnapshot();
-    } else if (shelfState === 'SHAKING_CHAOS') {
-      chaosWorld?.releaseAllSeatedBodies();
     }
 
-    chaosWorld?.applyShakeImpulse(vx, vy);
+    chaosWorld?.applyButtonShakeBurst(vx, vy);
 
     const amp = prefersReducedMotion() ? 0.3 : 1;
     frameShakeVx += Math.max(-180, Math.min(180, vx * 16)) * amp;
@@ -731,8 +764,21 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     if (shelfState === 'SHAKING_CHAOS') {
       frameTargetX = 0;
       frameTargetY = 0;
+      const tippedDirs = chaosWorld?.getTippedDirections() ?? new Map<string, -1 | 1>();
 
-      // 살짝만 흔들어 실제 이탈한 책이 0권이면 제자리 정돈 상태로 문을 연다.
+      // 이탈한 책은 먼저 배치를 비우고, 칸에 남은 책 중 쓰러진 책은 fallenDir를 기록한다.
+      for (const book of volume.books) {
+        if (chaosWorld?.hasBody(book.id)) {
+          book.placement = null;
+          continue;
+        }
+        const tipDir = tippedDirs.get(book.id);
+        if (tipDir && book.placement) {
+          book.placement = { ...book.placement, fallenDir: tipDir };
+        }
+      }
+
+      // 살짝만 흔들어 실제 이탈한 책이 0권이면 칸 내부 상태(쓰러짐 포함)를 유지한 채 문을 연다.
       if (!chaosWorld || chaosWorld.getDislodgedCount() === 0) {
         chaosWorld?.dispose();
         chaosWorld = null;
@@ -740,18 +786,20 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
         shelfState = 'OPEN_TIDYING';
         poses = buildNeatPoses(volume.books, layout);
         drawOrderIds = volume.books.map((b) => b.id);
+        if (tippedDirs.size > 0) {
+          callbacks.onShelfCommit(cloneBooksForCommit());
+        }
         emitSnapshot();
         requestRedraw();
         return;
       }
 
-      // 흔들려 풀린 책만 데스크 여백으로 쏟아지고 칸에 남은 책은 자기 자리에 머문다.
+      // 흔들려 풀린 책만 데스크 여백으로 쏟아지고 칸에 남은 책(기립/쓰러짐)은 자기 자리에 머문다.
       const refComp = layout.compartments[0];
       const nextPoses = buildNeatPoses(volume.books, layout);
       const preSpillPoses = chaosWorld.getBodyPoses();
       for (const book of volume.books) {
         if (!chaosWorld.hasBody(book.id)) continue;
-        book.placement = null;
         const dims = computeBookDimensions(book, refComp);
         const bp = preSpillPoses.get(book.id);
         const x = bp?.x ?? layout.innerRect.x + layout.innerRect.w * 0.5;

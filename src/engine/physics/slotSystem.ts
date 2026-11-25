@@ -9,6 +9,7 @@ import {
   computeBookDimensions,
   computeBookSlotNormX,
   computeBookSlotRects,
+  computeCompartmentBookPoses,
   computeDeskSpillTargets,
   getBookOrganicLeanRad,
   resolveCompartmentNormX,
@@ -50,6 +51,9 @@ export function canCompartmentFit(
   booksInCompartment: readonly BookModel[],
   candidateBook: BookModel
 ): boolean {
+  if (booksInCompartment.some((b) => b.placement?.fallenDir !== undefined)) {
+    return false;
+  }
   const existingSum = booksInCompartment.reduce(
     (sum, b) => sum + BOOK_THICKNESS_RATIOS[b.thicknessTier],
     0
@@ -193,10 +197,12 @@ export function commitBookPlacement(
       );
     oldSiblings.forEach((b, idx) => {
       const preservedNormX = b.placement?.normX ?? prevCompNormX?.get(b.id);
+      const preservedFallenDir = b.placement?.fallenDir;
       b.placement = {
         compartmentIndex: prevCompIdx,
         orderInCompartment: idx,
         ...(preservedNormX !== undefined ? { normX: preservedNormX } : {}),
+        ...(preservedFallenDir !== undefined ? { fallenDir: preservedFallenDir } : {}),
       };
     });
   }
@@ -215,10 +221,12 @@ export function commitBookPlacement(
   targetSiblings.splice(clampedIdx, 0, dragged);
   targetSiblings.forEach((b, idx) => {
     const nextNormX = resolvedNormX?.get(b.id) ?? b.placement?.normX;
+    const preservedFallenDir = b.id !== dragged.id ? b.placement?.fallenDir : undefined;
     b.placement = {
       compartmentIndex: targetCompartmentIndex,
       orderInCompartment: idx,
       ...(nextNormX !== undefined ? { normX: nextNormX } : {}),
+      ...(preservedFallenDir !== undefined ? { fallenDir: preservedFallenDir } : {}),
     };
   });
 }
@@ -327,24 +335,21 @@ export function buildNeatPoses(
   for (const comp of layout.compartments) {
     const list = byComp.get(comp.index);
     if (!list || list.length === 0) continue;
-    const rects = computeBookSlotRects(list, comp);
+    const compPoses = computeCompartmentBookPoses(list, comp);
     for (const book of list) {
-      const r = rects.get(book.id);
-      if (!r) continue;
-      const cx = r.x + r.w * 0.5;
-      const cy = r.y + r.h * 0.5;
-      const lean = getBookOrganicLeanRad(book.seed);
+      const bp = compPoses.get(book.id);
+      if (!bp) continue;
       poses.set(book.id, {
         bookId: book.id,
-        x: cx,
-        y: cy,
-        angle: lean,
+        x: bp.centerX,
+        y: bp.centerY,
+        angle: bp.angleRad,
         scale: 1,
-        widthPx: r.w,
-        heightPx: r.h,
-        targetX: cx,
-        targetY: cy,
-        targetAngle: lean,
+        widthPx: bp.widthPx,
+        heightPx: bp.heightPx,
+        targetX: bp.centerX,
+        targetY: bp.centerY,
+        targetAngle: bp.angleRad,
         targetScale: 1,
       });
     }
@@ -459,16 +464,16 @@ export function syncTargetsFromPlacements(
 
     const list = byComp.get(comp.index);
     if (!list || list.length === 0) continue;
-    const rects = computeBookSlotRects(list, comp);
+    const compPoses = computeCompartmentBookPoses(list, comp);
     for (const book of list) {
-      const r = rects.get(book.id);
+      const bp = compPoses.get(book.id);
       const pose = poses.get(book.id);
-      if (!r || !pose) continue;
-      pose.widthPx = r.w;
-      pose.heightPx = r.h;
-      pose.targetX = r.x + r.w * 0.5;
-      pose.targetY = r.y + r.h * 0.5;
-      pose.targetAngle = getBookOrganicLeanRad(book.seed);
+      if (!bp || !pose) continue;
+      pose.widthPx = bp.widthPx;
+      pose.heightPx = bp.heightPx;
+      pose.targetX = bp.centerX;
+      pose.targetY = bp.centerY;
+      pose.targetAngle = bp.angleRad;
       pose.targetScale = 1;
     }
   }

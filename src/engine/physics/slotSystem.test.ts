@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultVolume } from '../../data/defaultBooks';
 import type { BookModel } from '../../types/contracts';
-import { computeBookSlotRects, computeShelfLayout } from '../layout/shelfLayout';
+import {
+  computeBookSlotRects,
+  computeCompartmentBookPoses,
+  computeShelfLayout,
+} from '../layout/shelfLayout';
 import {
   buildNeatPoses,
   canCompartmentFit,
@@ -192,5 +196,131 @@ describe('SlotSystem kinematics, capacity, and touch ergonomics', () => {
     const rightStart = Math.max(anchorRect.x, nearRect.x);
     const leftWidth = anchorRect.x < nearRect.x ? anchorRect.w : nearRect.w;
     expect(rightStart).toBeGreaterThan(leftEdge + leftWidth);
+  });
+
+  it('clamps fallen book angles cleanly inside compartment walls on both 3x3 and 5x3 layouts', () => {
+    for (const preset of ['3x3', '5x3'] as const) {
+      const volume = createDefaultVolume(1, preset);
+      for (const b of volume.books) b.placement = null;
+      const layout = computeShelfLayout(1440, 900, volume.gridCols, volume.gridRows);
+      const comp = layout.compartments[0];
+
+      const book = { ...volume.books[0], heightTier: 3 as const, thicknessTier: 0 as const };
+      book.placement = {
+        compartmentIndex: 0,
+        orderInCompartment: 0,
+        normX: 0.35,
+        fallenDir: 1,
+      };
+
+      const compPoses = computeCompartmentBookPoses([book], comp);
+      const bp = compPoses.get(book.id)!;
+      expect(bp.angleRad).toBeGreaterThan(0.2);
+
+      const cos = Math.cos(bp.angleRad);
+      const sin = Math.sin(bp.angleRad);
+      const hw = bp.widthPx * 0.5;
+      const hh = bp.heightPx * 0.5;
+      const corners = [
+        { x: bp.centerX + (-hw * cos - -hh * sin), y: bp.centerY + (-hw * sin + -hh * cos) },
+        { x: bp.centerX + (hw * cos - -hh * sin), y: bp.centerY + (hw * sin + -hh * cos) },
+        { x: bp.centerX + (hw * cos - hh * sin), y: bp.centerY + (hw * sin + hh * cos) },
+        { x: bp.centerX + (-hw * cos - hh * sin), y: bp.centerY + (-hw * sin + hh * cos) },
+      ];
+
+      for (const pt of corners) {
+        expect(pt.x).toBeGreaterThanOrEqual(comp.x - 0.5);
+        expect(pt.x).toBeLessThanOrEqual(comp.x + comp.w + 0.5);
+        expect(pt.y).toBeGreaterThanOrEqual(comp.y - 0.5);
+        expect(pt.y).toBeLessThanOrEqual(comp.y + comp.h + 0.5);
+      }
+    }
+  });
+
+  it('blocks new insertions into a compartment containing a fallen book until that book is stood upright', () => {
+    const volume = createDefaultVolume(1, '3x3');
+    for (const b of volume.books) b.placement = null;
+    const layout = computeShelfLayout(1440, 900, 3, 3);
+    const comp = layout.compartments[4];
+
+    const fallenBook = volume.books[0];
+    fallenBook.placement = {
+      compartmentIndex: 4,
+      orderInCompartment: 0,
+      normX: 0.14,
+      fallenDir: 1,
+    };
+
+    const incoming = volume.books[1];
+    expect(canCompartmentFit([fallenBook], incoming)).toBe(false);
+    expect(
+      computeInsertionPreview(
+        incoming,
+        comp.x + comp.w * 0.78,
+        comp.y + comp.h * 0.5,
+        volume.books,
+        layout
+      )
+    ).toBeNull();
+
+    // 쓰러진 책 본인을 집어 같은 칸에 다시 꽂으면 허용되고 fallenDir가 제거되어 직립한다.
+    const reStandPreview = computeInsertionPreview(
+      fallenBook,
+      comp.x + comp.w * 0.25,
+      comp.y + comp.h * 0.5,
+      volume.books,
+      layout
+    );
+    expect(reStandPreview).not.toBeNull();
+    commitBookPlacement(
+      volume.books,
+      fallenBook.id,
+      4,
+      reStandPreview!.insertIndex,
+      reStandPreview!.slotNormX
+    );
+    expect(fallenBook.placement?.fallenDir).toBeUndefined();
+
+    // 기립 복원 후에는 새 책 삽입도 다시 가능해진다.
+    expect(canCompartmentFit([fallenBook], incoming)).toBe(true);
+    expect(
+      computeInsertionPreview(
+        incoming,
+        comp.x + comp.w * 0.78,
+        comp.y + comp.h * 0.5,
+        volume.books,
+        layout
+      )
+    ).not.toBeNull();
+  });
+
+  it('resolves two same-direction fallen books with domino angle separation inside bounds', () => {
+    const volume = createDefaultVolume(1, '3x3');
+    for (const b of volume.books) b.placement = null;
+    const layout = computeShelfLayout(1440, 900, 3, 3);
+    const comp = layout.compartments[2];
+
+    const leftFallen = volume.books[0];
+    const rightFallen = volume.books[1];
+    leftFallen.placement = {
+      compartmentIndex: 2,
+      orderInCompartment: 0,
+      normX: 0.1,
+      fallenDir: 1,
+    };
+    rightFallen.placement = {
+      compartmentIndex: 2,
+      orderInCompartment: 1,
+      normX: 0.34,
+      fallenDir: 1,
+    };
+
+    const compPoses = computeCompartmentBookPoses([leftFallen, rightFallen], comp);
+    const leftPose = compPoses.get(leftFallen.id)!;
+    const rightPose = compPoses.get(rightFallen.id)!;
+
+    expect(rightPose.angleRad).toBeGreaterThan(0.35);
+    expect(leftPose.angleRad).toBeGreaterThan(0.2);
+    expect(leftPose.angleRad).toBeLessThanOrEqual(rightPose.angleRad);
   });
 });
