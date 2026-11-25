@@ -184,17 +184,17 @@ export interface HorizontalSlotRequest {
 }
 
 /**
- * 좌->우 순서로 정렬된 책들의 희망 가로 좌표를 칸 경계 및 최소 간격을 지키며 최소 이동으로 해소한다.
+ * 좌->우 순서로 정렬된 책들의 희망 가로 좌표를 허용 구간 [minX, maxRight] 및 최소 간격을 지키며 최소 이동으로 해소한다.
  */
 export function resolveCompartmentNormX(
-  orderedRequests: readonly HorizontalSlotRequest[]
+  orderedRequests: readonly HorizontalSlotRequest[],
+  minX = COMPARTMENT_SIDE_MARGIN,
+  maxRight = COMPARTMENT_SIDE_MARGIN + COMPARTMENT_USABLE_WIDTH
 ): Map<string, number> {
   const result = new Map<string, number>();
   const n = orderedRequests.length;
   if (n === 0) return result;
 
-  const minX = COMPARTMENT_SIDE_MARGIN;
-  const maxRight = COMPARTMENT_SIDE_MARGIN + COMPARTMENT_USABLE_WIDTH;
   const gap = BOOK_GAP_RATIO;
 
   const xs = orderedRequests.map((req) =>
@@ -443,6 +443,83 @@ export function computeCompartmentBookPoses(
   }
 
   return poses;
+}
+
+export interface FreeSlotZone {
+  readonly minX: number;
+  readonly maxX: number;
+}
+
+const SHALLOW_LEAN_THRESHOLD_RAD = (68 * Math.PI) / 180;
+
+/**
+ * 쓰러진 책들이 물리적으로 점유한 가로 구간을 제외한 삽입 가능 자유 구간 목록을 반환한다.
+ */
+export function computeCompartmentFreeZones(
+  booksInCompartment: readonly BookModel[],
+  compartment: CompartmentRect
+): FreeSlotZone[] {
+  const usableMin = COMPARTMENT_SIDE_MARGIN;
+  const usableMax = COMPARTMENT_SIDE_MARGIN + COMPARTMENT_USABLE_WIDTH;
+  const fallenBooks = booksInCompartment.filter((b) => b.placement?.fallenDir !== undefined);
+  if (fallenBooks.length === 0) {
+    return [{ minX: usableMin, maxX: usableMax }];
+  }
+
+  const normXMap = computeBookSlotNormX(booksInCompartment);
+  const compPoses = computeCompartmentBookPoses(booksInCompartment, compartment);
+  const compW = Math.max(1, compartment.w);
+
+  const obstacles: { start: number; end: number }[] = [];
+  for (const book of fallenBooks) {
+    const bp = compPoses.get(book.id);
+    const widthNorm = BOOK_THICKNESS_RATIOS[book.thicknessTier];
+    const baseNormX = normXMap.get(book.id) ?? COMPARTMENT_SIDE_MARGIN;
+    let obsMin = baseNormX;
+    let obsMax = baseNormX + widthNorm;
+
+    if (bp) {
+      const theta = Math.abs(bp.angleRad);
+      const halfSpanPx =
+        bp.widthPx * 0.5 * Math.cos(theta) + bp.heightPx * 0.5 * Math.sin(theta);
+      const rawMin = (bp.centerX - halfSpanPx - compartment.x) / compW;
+      const rawMax = (bp.centerX + halfSpanPx - compartment.x) / compW;
+      // 완전히 바닥에 눕지 않은(68도 미만) 책은 상단 끝부분에 약간의 여유를 허용한다.
+      const tipTrim = theta < SHALLOW_LEAN_THRESHOLD_RAD ? 0.025 : 0;
+      obsMin = Math.min(baseNormX, rawMin + tipTrim);
+      obsMax = Math.max(baseNormX + widthNorm, rawMax - tipTrim);
+    }
+
+    obstacles.push({
+      start: clamp(obsMin - BOOK_GAP_RATIO, usableMin, usableMax),
+      end: clamp(obsMax + BOOK_GAP_RATIO, usableMin, usableMax),
+    });
+  }
+
+  obstacles.sort((a, b) => a.start - b.start);
+  const merged: { start: number; end: number }[] = [];
+  for (const obs of obstacles) {
+    const prev = merged[merged.length - 1];
+    if (prev && obs.start <= prev.end + 1e-6) {
+      prev.end = Math.max(prev.end, obs.end);
+    } else {
+      merged.push({ ...obs });
+    }
+  }
+
+  const zones: FreeSlotZone[] = [];
+  let cursor = usableMin;
+  for (const obs of merged) {
+    if (obs.start - cursor > 1e-4) {
+      zones.push({ minX: cursor, maxX: obs.start });
+    }
+    cursor = Math.max(cursor, obs.end);
+  }
+  if (usableMax - cursor > 1e-4) {
+    zones.push({ minX: cursor, maxX: usableMax });
+  }
+
+  return zones;
 }
 
 /**

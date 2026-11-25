@@ -10,10 +10,12 @@ import {
   computeBookSlotNormX,
   computeBookSlotRects,
   computeCompartmentBookPoses,
+  computeCompartmentFreeZones,
   computeDeskSpillTargets,
   getBookOrganicLeanRad,
   resolveCompartmentNormX,
   type CompartmentRect,
+  type FreeSlotZone,
   type HorizontalSlotRequest,
   type Rect,
   type ShelfLayoutGeometry,
@@ -47,22 +49,89 @@ export interface InsertionPreview {
   readonly highlightRect: Rect;
 }
 
-export function canCompartmentFit(
-  booksInCompartment: readonly BookModel[],
+const UNIT_FALLBACK_COMPARTMENT: CompartmentRect = {
+  index: 0,
+  row: 0,
+  col: 0,
+  x: 0,
+  y: 0,
+  w: 100,
+  h: 100,
+};
+
+function partitionUprightBooksByZone(
+  uprightBooks: readonly BookModel[],
+  existingNormX: ReadonlyMap<string, number>,
+  zones: readonly FreeSlotZone[]
+): BookModel[][] {
+  const buckets: BookModel[][] = zones.map(() => []);
+  if (zones.length === 0) return buckets;
+
+  for (const book of uprightBooks) {
+    const nx = existingNormX.get(book.id) ?? COMPARTMENT_SIDE_MARGIN;
+    const cx = nx + BOOK_THICKNESS_RATIOS[book.thicknessTier] * 0.5;
+    let bestIdx = 0;
+    let bestDist = Number.POSITIVE_INFINITY;
+
+    for (let z = 0; z < zones.length; z += 1) {
+      const zone = zones[z];
+      const clamped = Math.min(zone.maxX, Math.max(zone.minX, cx));
+      const dist = Math.abs(cx - clamped);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = z;
+      }
+    }
+    buckets[bestIdx].push(book);
+  }
+
+  return buckets;
+}
+
+function canZoneFit(
+  zone: FreeSlotZone,
+  uprightBooksInZone: readonly BookModel[],
   candidateBook: BookModel
 ): boolean {
-  if (booksInCompartment.some((b) => b.placement?.fallenDir !== undefined)) {
-    return false;
-  }
-  const existingSum = booksInCompartment.reduce(
+  const existingSum = uprightBooksInZone.reduce(
     (sum, b) => sum + BOOK_THICKNESS_RATIOS[b.thicknessTier],
     0
   );
   const totalWidth =
     existingSum +
     BOOK_THICKNESS_RATIOS[candidateBook.thicknessTier] +
-    booksInCompartment.length * BOOK_GAP_RATIO;
-  return totalWidth <= COMPARTMENT_USABLE_WIDTH + 1e-6;
+    uprightBooksInZone.length * BOOK_GAP_RATIO;
+  return totalWidth <= zone.maxX - zone.minX + 1e-6;
+}
+
+export function canCompartmentFit(
+  booksInCompartment: readonly BookModel[],
+  candidateBook: BookModel,
+  compartment?: CompartmentRect
+): boolean {
+  const hasFallen = booksInCompartment.some((b) => b.placement?.fallenDir !== undefined);
+  if (!hasFallen) {
+    const existingSum = booksInCompartment.reduce(
+      (sum, b) => sum + BOOK_THICKNESS_RATIOS[b.thicknessTier],
+      0
+    );
+    const totalWidth =
+      existingSum +
+      BOOK_THICKNESS_RATIOS[candidateBook.thicknessTier] +
+      booksInCompartment.length * BOOK_GAP_RATIO;
+    return totalWidth <= COMPARTMENT_USABLE_WIDTH + 1e-6;
+  }
+
+  const zones = computeCompartmentFreeZones(
+    booksInCompartment,
+    compartment ?? UNIT_FALLBACK_COMPARTMENT
+  );
+  if (zones.length === 0) return false;
+  const uprightBooks = booksInCompartment.filter((b) => b.placement?.fallenDir === undefined);
+  const normXMap = computeBookSlotNormX(booksInCompartment);
+  const buckets = partitionUprightBooksByZone(uprightBooks, normXMap, zones);
+
+  return zones.some((zone, idx) => canZoneFit(zone, buckets[idx], candidateBook));
 }
 
 function computeSlotRectsWithPhantom(
@@ -136,28 +205,126 @@ export function computeInsertionPreview(
         (a.placement?.orderInCompartment ?? 0) - (b.placement?.orderInCompartment ?? 0)
     );
 
-  if (!canCompartmentFit(existing, draggedBook)) {
+  if (!canCompartmentFit(existing, draggedBook, targetComp)) {
     return null;
   }
 
   const candidateWidthNorm = BOOK_THICKNESS_RATIOS[draggedBook.thicknessTier];
   const desiredNormX = (centerX - targetComp.x) / targetComp.w - candidateWidthNorm * 0.5;
-  const baseRects = computeBookSlotRects(existing, targetComp);
+  const hasFallen = existing.some((b) => b.placement?.fallenDir !== undefined);
+
+  if (!hasFallen) {
+    const baseRects = computeBookSlotRects(existing, targetComp);
+    let insertIndex = 0;
+    for (const book of existing) {
+      const r = baseRects.get(book.id);
+      if (r && centerX > r.x + r.w * 0.5) {
+        insertIndex += 1;
+      }
+    }
+
+    const { slotRects, slotNormX } = computeSlotRectsWithPhantom(
+      existing,
+      draggedBook,
+      insertIndex,
+      desiredNormX,
+      targetComp
+    );
+    const highlightRect = slotRects.get(draggedBook.id);
+    if (!highlightRect) return null;
+
+    return {
+      compartmentIndex: targetComp.index,
+      insertIndex,
+      slotRects,
+      slotNormX,
+      highlightRect,
+    };
+  }
+
+  const zones = computeCompartmentFreeZones(existing, targetComp);
+  const existingNormX = computeBookSlotNormX(existing);
+  const uprightBooks = existing.filter((b) => b.placement?.fallenDir === undefined);
+  const buckets = partitionUprightBooksByZone(uprightBooks, existingNormX, zones);
+
+  let bestZoneIdx = -1;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < zones.length; i += 1) {
+    const zone = zones[i];
+    if (!canZoneFit(zone, buckets[i], draggedBook)) continue;
+    const maxStart = Math.max(zone.minX, zone.maxX - candidateWidthNorm);
+    const clamped = Math.min(maxStart, Math.max(zone.minX, desiredNormX));
+    const dist = Math.abs(desiredNormX - clamped);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestZoneIdx = i;
+    }
+  }
+  if (bestZoneIdx < 0) return null;
+
+  const chosenZone = zones[bestZoneIdx];
+  const zoneUprights = buckets[bestZoneIdx];
+  let zoneInsertIdx = 0;
+  for (const book of zoneUprights) {
+    const nx = existingNormX.get(book.id) ?? COMPARTMENT_SIDE_MARGIN;
+    const centerPx =
+      targetComp.x + (nx + BOOK_THICKNESS_RATIOS[book.thicknessTier] * 0.5) * targetComp.w;
+    if (centerX > centerPx) {
+      zoneInsertIdx += 1;
+    }
+  }
+
+  const zoneRequests: HorizontalSlotRequest[] = zoneUprights.map((book) => ({
+    bookId: book.id,
+    widthNorm: BOOK_THICKNESS_RATIOS[book.thicknessTier],
+    desiredNormX: existingNormX.get(book.id) ?? COMPARTMENT_SIDE_MARGIN,
+  }));
+  zoneRequests.splice(zoneInsertIdx, 0, {
+    bookId: draggedBook.id,
+    widthNorm: candidateWidthNorm,
+    desiredNormX,
+  });
+
+  const resolvedZoneNormX = resolveCompartmentNormX(
+    zoneRequests,
+    chosenZone.minX,
+    chosenZone.maxX
+  );
+  const slotNormX = new Map<string, number>();
+  for (const book of existing) {
+    const nx = resolvedZoneNormX.get(book.id) ?? existingNormX.get(book.id);
+    if (nx !== undefined) {
+      slotNormX.set(book.id, nx);
+    }
+  }
+  const candidateResolvedX = resolvedZoneNormX.get(draggedBook.id);
+  if (candidateResolvedX === undefined) return null;
+  slotNormX.set(draggedBook.id, candidateResolvedX);
+
+  const slotRects = new Map<string, Rect>();
+  const addUprightRect = (book: BookModel, nx: number) => {
+    const { widthPx, heightPx } = computeBookDimensions(book, targetComp);
+    slotRects.set(book.id, {
+      x: targetComp.x + nx * targetComp.w,
+      y: targetComp.y + targetComp.h - heightPx - 1,
+      w: widthPx,
+      h: heightPx,
+    });
+  };
+  for (const book of uprightBooks) {
+    const nx = slotNormX.get(book.id);
+    if (nx !== undefined) addUprightRect(book, nx);
+  }
+  addUprightRect(draggedBook, candidateResolvedX);
+
   let insertIndex = 0;
   for (const book of existing) {
-    const r = baseRects.get(book.id);
-    if (r && centerX > r.x + r.w * 0.5) {
+    const nx = slotNormX.get(book.id) ?? COMPARTMENT_SIDE_MARGIN;
+    if (nx < candidateResolvedX) {
       insertIndex += 1;
     }
   }
 
-  const { slotRects, slotNormX } = computeSlotRectsWithPhantom(
-    existing,
-    draggedBook,
-    insertIndex,
-    desiredNormX,
-    targetComp
-  );
   const highlightRect = slotRects.get(draggedBook.id);
   if (!highlightRect) return null;
 
@@ -447,11 +614,27 @@ export function syncTargetsFromPlacements(
 
   for (const comp of layout.compartments) {
     if (preview && preview.compartmentIndex === comp.index) {
+      const list = byComp.get(comp.index);
+      if (list && list.some((b) => b.placement?.fallenDir !== undefined)) {
+        const compPoses = computeCompartmentBookPoses(list, comp);
+        for (const book of list) {
+          if (book.placement?.fallenDir === undefined) continue;
+          const bp = compPoses.get(book.id);
+          const pose = poses.get(book.id);
+          if (!bp || !pose) continue;
+          pose.widthPx = bp.widthPx;
+          pose.heightPx = bp.heightPx;
+          pose.targetX = bp.centerX;
+          pose.targetY = bp.centerY;
+          pose.targetAngle = bp.angleRad;
+          pose.targetScale = 1;
+        }
+      }
       for (const [id, r] of preview.slotRects) {
         if (id === draggedBookId) continue;
         const pose = poses.get(id);
         const book = books.find((b) => b.id === id);
-        if (!pose || !book) continue;
+        if (!pose || !book || book.placement?.fallenDir !== undefined) continue;
         pose.widthPx = r.w;
         pose.heightPx = r.h;
         pose.targetX = r.x + r.w * 0.5;

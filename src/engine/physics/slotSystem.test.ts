@@ -237,22 +237,23 @@ describe('SlotSystem kinematics, capacity, and touch ergonomics', () => {
     }
   });
 
-  it('blocks new insertions into a compartment containing a fallen book until that book is stood upright', () => {
+  it('blocks insertion when a fallen book covers the floor, and restores insertion once stood upright', () => {
     const volume = createDefaultVolume(1, '3x3');
     for (const b of volume.books) b.placement = null;
     const layout = computeShelfLayout(1440, 900, 3, 3);
     const comp = layout.compartments[4];
 
-    const fallenBook = volume.books[0];
+    const fallenBook = { ...volume.books[0], heightTier: 3 as const, thicknessTier: 0 as const };
     fallenBook.placement = {
       compartmentIndex: 4,
       orderInCompartment: 0,
-      normX: 0.14,
+      normX: 0.04,
       fallenDir: 1,
     };
+    volume.books[0] = fallenBook;
 
     const incoming = volume.books[1];
-    expect(canCompartmentFit([fallenBook], incoming)).toBe(false);
+    expect(canCompartmentFit([fallenBook], incoming, comp)).toBe(false);
     expect(
       computeInsertionPreview(
         incoming,
@@ -282,7 +283,7 @@ describe('SlotSystem kinematics, capacity, and touch ergonomics', () => {
     expect(fallenBook.placement?.fallenDir).toBeUndefined();
 
     // 기립 복원 후에는 새 책 삽입도 다시 가능해진다.
-    expect(canCompartmentFit([fallenBook], incoming)).toBe(true);
+    expect(canCompartmentFit([fallenBook], incoming, comp)).toBe(true);
     expect(
       computeInsertionPreview(
         incoming,
@@ -292,6 +293,94 @@ describe('SlotSystem kinematics, capacity, and touch ergonomics', () => {
         layout
       )
     ).not.toBeNull();
+  });
+
+  it('allows inserting into genuine free space next to a leaning book without shifting or overlapping it, and blocks once full', () => {
+    const volume = createDefaultVolume(1, '3x3');
+    for (const b of volume.books) b.placement = null;
+    const layout = computeShelfLayout(1440, 900, 3, 3);
+    const comp = layout.compartments[4];
+
+    // 우측 벽에 기댄(오른쪽 0.44 위치) 책 -> 좌측 빈 공간([0.03 .. ~0.42])에는 삽입 가능해야 한다.
+    const leaningRight = { ...volume.books[0], heightTier: 2 as const, thicknessTier: 0 as const };
+    leaningRight.placement = {
+      compartmentIndex: 4,
+      orderInCompartment: 0,
+      normX: 0.44,
+      fallenDir: 1,
+    };
+    volume.books[0] = leaningRight;
+
+    const firstIncoming = { ...volume.books[1], thicknessTier: 0 as const };
+    volume.books[1] = firstIncoming;
+    expect(canCompartmentFit([leaningRight], firstIncoming, comp)).toBe(true);
+
+    const preview1 = computeInsertionPreview(
+      firstIncoming,
+      comp.x + comp.w * 0.14,
+      comp.y + comp.h * 0.5,
+      volume.books,
+      layout
+    );
+    expect(preview1).not.toBeNull();
+    expect(preview1!.slotNormX.get(leaningRight.id)).toBeCloseTo(0.44, 4);
+    expect(preview1!.slotNormX.get(firstIncoming.id)!).toBeLessThan(0.27);
+
+    commitBookPlacement(
+      volume.books,
+      firstIncoming.id,
+      4,
+      preview1!.insertIndex,
+      preview1!.slotNormX
+    );
+    expect(leaningRight.placement?.normX).toBeCloseTo(0.44, 4);
+    expect(leaningRight.placement?.fallenDir).toBe(1);
+
+    // 두 번째 얇은 책도 좌측 잔여 공간에 들어갈 수 있지만, 가득 차면 세 번째는 차단된다.
+    const secondIncoming = { ...volume.books[2], thicknessTier: 0 as const };
+    volume.books[2] = secondIncoming;
+    const preview2 = computeInsertionPreview(
+      secondIncoming,
+      comp.x + comp.w * 0.28,
+      comp.y + comp.h * 0.5,
+      volume.books,
+      layout
+    );
+    expect(preview2).not.toBeNull();
+    commitBookPlacement(
+      volume.books,
+      secondIncoming.id,
+      4,
+      preview2!.insertIndex,
+      preview2!.slotNormX
+    );
+
+    const thirdIncoming = { ...volume.books[3], thicknessTier: 2 as const };
+    volume.books[3] = thirdIncoming;
+    const placedInComp = volume.books.filter((b) => b.placement?.compartmentIndex === 4);
+    expect(canCompartmentFit(placedInComp, thirdIncoming, comp)).toBe(false);
+    expect(
+      computeInsertionPreview(
+        thirdIncoming,
+        comp.x + comp.w * 0.2,
+        comp.y + comp.h * 0.5,
+        volume.books,
+        layout
+      )
+    ).toBeNull();
+
+    // 새로 꽂은 기립 책들과 기댄 책이 시각적으로 겹치지 않고 칸 내부에 머문다.
+    const compPoses = computeCompartmentBookPoses(placedInComp, comp);
+    const leanPose = compPoses.get(leaningRight.id)!;
+    const firstPose = compPoses.get(firstIncoming.id)!;
+    const secondPose = compPoses.get(secondIncoming.id)!;
+    expect(firstPose.centerX + firstPose.widthPx * 0.5).toBeLessThan(
+      secondPose.centerX - secondPose.widthPx * 0.5 + 1e-3
+    );
+    expect(secondPose.centerX + secondPose.widthPx * 0.5).toBeLessThan(
+      leanPose.centerX + leanPose.widthPx * 0.5
+    );
+    expect(leaningRight.placement?.normX).toBeCloseTo(0.44, 4);
   });
 
   it('resolves two same-direction fallen books with domino angle separation inside bounds', () => {
