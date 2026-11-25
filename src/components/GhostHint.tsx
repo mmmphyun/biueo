@@ -42,12 +42,8 @@ export function GhostHint({ themeId, snapshot, hintsSeen }: GhostHintProps) {
     <p
       role="status"
       aria-live="polite"
-      style={{
-        color: theme.dockInk,
-        backgroundColor: theme.dockSurface,
-        borderColor: theme.dockBorder,
-      }}
-      className="pointer-events-none fixed bottom-24 left-1/2 z-10 w-max max-w-[90vw] -translate-x-1/2 rounded-full border px-3 py-1 text-center text-xs font-medium opacity-92 shadow-xs sm:bottom-20 sm:text-sm"
+      style={{ color: theme.ink }}
+      className="pointer-events-none fixed bottom-13 left-1/2 z-10 w-max max-w-[88vw] -translate-x-1/2 text-center text-xs font-normal tracking-[-0.01em] opacity-65 sm:bottom-15 sm:text-[13px]"
     >
       {message}
     </p>

@@ -1,5 +1,10 @@
 import { useRef } from 'react';
-import { BOOK_COLORS, DESK_THEMES, RITUAL_PROMPTS } from '../data/palette';
+import {
+  BOOK_COLORS,
+  DESK_THEMES,
+  getBookRitualPrompt,
+  RITUAL_AXIS_LABELS,
+} from '../data/palette';
 import { useDialogControl } from '../hooks/useDialogControl';
 import type { BookModel, DeskThemeId } from '../types/contracts';
 
@@ -15,59 +20,65 @@ export function BookPeekDialog({ book, themeId, onClose }: BookPeekDialogProps) 
 
   const theme = DESK_THEMES[themeId];
   const colorHex = book ? BOOK_COLORS[book.colorId].hex : theme.bg;
-  const promptText = book
-    ? book.note?.promptText ?? RITUAL_PROMPTS[book.defaultPromptType].promptText
-    : '';
+  const promptEntry = book ? getBookRitualPrompt(book) : null;
+  const promptText = book?.note?.promptText ?? promptEntry?.promptText ?? '';
+  const axisLabel = book ? RITUAL_AXIS_LABELS[book.note?.promptType ?? book.defaultPromptType] : '';
 
   return (
     <dialog
       ref={dialogRef}
       {...({ closedby: 'any' } as Record<string, string>)}
       aria-labelledby="book-peek-title"
-      style={{
-        backgroundColor: theme.dockSurface,
-        color: theme.dockInk,
-        borderColor: theme.dockBorder,
-      }}
-      className="w-[calc(100vw-32px)] max-w-md rounded-2xl border p-5 shadow-xl sm:p-6"
+      style={
+        {
+          backgroundColor: theme.dockSurface,
+          color: theme.dockInk,
+          '--sheet-shadow': theme.shadow,
+        } as React.CSSProperties
+      }
+      className="paper-sheet-dialog w-[calc(100vw-32px)] max-w-md"
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span
-            aria-hidden="true"
-            className="inline-block h-4 w-2.5 rounded-sm"
-            style={{ backgroundColor: colorHex }}
-          />
-          <span className="text-xs font-medium" style={{ color: theme.dockMuted }}>
-            {book?.id}
-          </span>
+      <div className="flex min-h-[210px]">
+        <div
+          aria-hidden="true"
+          className="w-2.5 shrink-0"
+          style={{ backgroundColor: colorHex }}
+        />
+
+        <div className="flex flex-1 flex-col justify-between px-6 py-6 sm:px-7 sm:py-7">
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium" style={{ color: theme.dockMuted }}>
+                {axisLabel}
+              </span>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => dialogRef.current?.close()}
+                className="desk-ink-action text-xs font-medium opacity-60 hover:opacity-100"
+              >
+                닫기
+              </button>
+            </div>
+
+            <h2
+              id="book-peek-title"
+              className="mt-4 text-base font-semibold leading-relaxed tracking-[-0.02em] sm:text-[17px]"
+            >
+              {promptText}
+            </h2>
+          </div>
+
+          <div className="mt-7 text-sm leading-relaxed">
+            {book?.note ? (
+              <p>{book.note.content}</p>
+            ) : (
+              <p className="text-xs leading-relaxed" style={{ color: theme.dockMuted }}>
+                {promptEntry?.placeholder ?? '아직 남겨둔 한 줄이 없습니다.'}
+              </p>
+            )}
+          </div>
         </div>
-        <button
-          type="button"
-          autoFocus
-          onClick={() => dialogRef.current?.close()}
-          style={{ borderColor: theme.dockBorder }}
-          className="cursor-pointer rounded-lg border px-2.5 py-1 text-xs font-medium hover:opacity-80"
-        >
-          닫기
-        </button>
-      </div>
-
-      <h2 id="book-peek-title" className="font-book-serif mt-4 text-base font-bold leading-snug sm:text-lg">
-        {promptText}
-      </h2>
-
-      <div
-        className="mt-3 rounded-xl border p-3.5 text-sm leading-relaxed"
-        style={{ borderColor: theme.dockBorder }}
-      >
-        {book?.note ? (
-          <p>{book.note.content}</p>
-        ) : (
-          <p className="text-xs" style={{ color: theme.dockMuted }}>
-            아직 남겨둔 한 줄이 없습니다.
-          </p>
-        )}
       </div>
     </dialog>
   );
