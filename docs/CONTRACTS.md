@@ -8,7 +8,17 @@
 ## 1. Domain & Storage TypeScript Contracts (`src/types/contracts.ts`)
 
 ```ts
-export type DeskThemeId = 'sage' | 'slate' | 'lavender' | 'charcoal';
+export type DeskColorMode = 'light' | 'dark';
+
+export type DeskThemeId =
+  | 'sage'
+  | 'slate'
+  | 'lavender'
+  | 'mist'
+  | 'charcoal'
+  | 'pine'
+  | 'dusk'
+  | 'umber';
 
 export type ShelfState =
   | 'LOCKED_NEAT'
@@ -147,9 +157,12 @@ export interface BackupPayloadV1 {
 
 ---
 
-## 3. Engine ↔ React UI Boundary API (`src/engine/controller.ts`)
+## 3. Module Architecture & Engine ↔ React UI Boundary API
 
-> **단일 진실 원천 원칙**: 60fps 물리 좌표, 캔버스 호버/드래그 상태, 스프라이트 캐시는 **Engine만 소유**합니다. React는 `<dialog>` 모달, 최소 플로팅 버튼, IndexedDB 영속화만 담당하며 프레임마다 리렌더링되지 않습니다.
+> **공유 셸 ↔ 콘텐츠 모듈 분리 원칙**:
+> - `src/shared/`는 라이트·다크 8종 테마(`theme/deskThemes.ts`), 공용 과슈/종이 캔버스 유틸(`canvas/`), 공용 직인쇄 크롬·종이 시트 모달·절전 스테이지 래퍼(`ui/`)만 소유합니다.
+> - `src/modules/bookshelf/`는 책장 물리(`physics/`), 정규화 배치(`layout/`), 텍스처 베이커(`textures/`), 16문항 덱 데이터(`data/`), 책장 컨트롤러(`shelfEngine.ts`), 책장 전용 React 뷰(`components/`)를 소유합니다.
+> - **단일 진실 원천 원칙**: 60fps 물리 좌표, 캔버스 호버/드래그 상태, 스프라이트 캐시는 **Engine만 소유**합니다. React는 `<dialog>` 모달, 최소 크롬 슬롯, 영속화만 담당하며 프레임마다 리렌더링되지 않습니다.
 
 ```ts
 export type OrderKind = 'hue' | 'height' | 'thickness' | 'motif' | 'written';
@@ -184,11 +197,10 @@ export interface ShelfEngineController {
   loadVolume(volume: ShelfVolume): void;
   updateBookNote(bookId: string, note: RitualNote | null): void; // 책갈피 리본 재베이킹
   setTheme(theme: DeskThemeId): void;
-  setTuning(tuning: VisualTuningParams): void;
   setAudioEnabled(enabled: boolean): void;
+  setMotionShakeEnabled(enabled: boolean): void;
   triggerShake(intensity?: number): void; // 0.3 - 1.0
   toggleDoor(): void;
-  setPreviewMode?(mode: 'neat_locked' | 'neat_open' | 'scattered_dummy'): void; // Phase 0 전용
 }
 ```
 
