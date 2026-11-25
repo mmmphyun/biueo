@@ -1578,6 +1578,8 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     frameShakeAngle = 0;
     chaosWorld?.dispose();
     chaosWorld = null;
+    poses = new Map();
+    bakeKey = '';
     activeDrag = null;
     insertionPreview = null;
     hoveredBookId = null;

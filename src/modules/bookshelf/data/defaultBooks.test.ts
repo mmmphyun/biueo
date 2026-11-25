@@ -53,7 +53,7 @@ describe('createDefaultVolume combinatorial invariants', () => {
     for (const motif of SPINE_MOTIFS) expect(motifCounts.get(motif)).toBe(6);
     for (const prompt of RITUAL_PROMPT_TYPES) expect(promptCounts.get(prompt)).toBe(9);
     for (let c = 0; c < 9; c += 1) expect(compCounts.get(c)).toBe(4);
-    expect(noteCount).toBe(3);
+    expect(noteCount).toBe(0);
   });
 
   it('constructs 60 books (5x3) with balanced 15 compartments, heights, thicknesses, motifs, and prompts', () => {
@@ -99,7 +99,7 @@ describe('createDefaultVolume combinatorial invariants', () => {
     for (const motif of SPINE_MOTIFS) expect(motifCounts.get(motif)).toBe(10);
     for (const prompt of RITUAL_PROMPT_TYPES) expect(promptCounts.get(prompt)).toBe(15);
     for (let c = 0; c < 15; c += 1) expect(compCounts.get(c)).toBe(4);
-    expect(noteCount).toBe(4);
+    expect(noteCount).toBe(0);
   });
 
   it('guarantees zero compartment overflow and >10% global width slack for both 3x3 and 5x3', () => {

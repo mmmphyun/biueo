@@ -4,7 +4,6 @@ import type {
   BookModel,
   BookThicknessTier,
   DeskThemeId,
-  RitualNote,
   ShelfGridPreset,
   ShelfVolume,
   UserPreferences,
@@ -17,7 +16,6 @@ import {
   BOOK_THICKNESS_RATIOS,
   COMPARTMENT_SIDE_MARGIN,
   COMPARTMENT_USABLE_WIDTH,
-  getBookRitualPrompt,
   RITUAL_PROMPT_TYPES,
   SPINE_MOTIFS,
 } from './bookPalette';
@@ -26,13 +24,6 @@ export const DEFAULT_TUNING: VisualTuningParams = {
   grainStrength: 0.32,
   edgeJitterPx: 0.7,
   shadowOffsetPx: 6,
-};
-
-const SAMPLE_NOTES: Record<number, string> = {
-  5: '복잡한 조건이 겹쳐도 끝까지 차분하게 원인을 좁혀간 점.',
-  17: '쉬는 시간에 휴대폰 대신 창밖을 5분만 바라보기.',
-  28: '막힌 코드 앞에서 설명을 함께 들어준 동료에게 고마웠음.',
-  46: '작은 실수를 바로 인정하고 다음 시도로 이어간 점.',
 };
 
 const FIVE_BY_THREE_COLOR_GROUPS: readonly BookColorId[] = [
@@ -71,9 +62,10 @@ function seededShuffleIndices(count: number, seed: number): number[] {
 
 export function createDefaultVolume(
   volumeNumber = 1,
-  gridPreset: ShelfGridPreset = '3x3'
+  gridPreset: ShelfGridPreset = '3x3',
+  createdAtIso = new Date().toISOString()
 ): ShelfVolume {
-  const now = '2026-11-24T00:00:00.000Z';
+  const now = createdAtIso;
   const gridCols = gridPreset === '5x3' ? 5 : 3;
   const gridRows = 3;
   const compartmentsCount = gridCols * gridRows;
@@ -108,18 +100,6 @@ export function createDefaultVolume(
       RITUAL_PROMPT_TYPES[(colorGroup + heightInGroup) % RITUAL_PROMPT_TYPES.length];
     const seed = 1000 + volumeNumber * 100 + gridCols * 19 + i * 37;
 
-    const sampleText =
-      volumeNumber === 1 && (i < 36 || gridPreset === '5x3') ? SAMPLE_NOTES[i] : undefined;
-    const note: RitualNote | null = sampleText
-      ? {
-          promptType: defaultPromptType,
-          promptText: getBookRitualPrompt({ seed, defaultPromptType }).promptText,
-          content: sampleText,
-          createdAt: now,
-          updatedAt: now,
-        }
-      : null;
-
     const paddedIdx = String(i).padStart(2, '0');
     return {
       id: `vol${volumeNumber}-${gridPreset}-book-${paddedIdx}`,
@@ -131,7 +111,7 @@ export function createDefaultVolume(
       motif,
       defaultPromptType,
       placement: placementByBookIndex[i],
-      note,
+      note: null,
     };
   });
 
