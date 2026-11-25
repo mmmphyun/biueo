@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HelpDialog } from './components/HelpDialog';
+import {
+  readAudioEnabledPreference,
+  saveAudioEnabledPreference,
+} from './modules/bookshelf/audio/foleySynth';
 import { BookPeekDialog } from './modules/bookshelf/components/BookPeekDialog';
 import { ShelfStage } from './modules/bookshelf/components/ShelfStage';
 import {
@@ -41,13 +45,17 @@ export default function App() {
   const [themeId, setThemeId] = useState<DeskThemeId>(() =>
     pickRandomThemeForMode(initialModeInfo.mode, readLastThemeId())
   );
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(() => readAudioEnabledPreference());
   const [motionShakeEnabled, setMotionShakeEnabled] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [tappedBookId, setTappedBookId] = useState<string | null>(null);
 
   const activeVolume = volumesByPreset[gridPreset];
   const initialPreferences = useMemo(
-    () => createDefaultPreferences(activeVolume.id, themeId),
+    () => ({
+      ...createDefaultPreferences(activeVolume.id, themeId),
+      audioEnabled,
+    }),
     // 최초 마운트 스냅샷만 엔진에 전달한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
@@ -78,6 +86,10 @@ export default function App() {
   }, [themeId]);
 
   useEffect(() => {
+    saveAudioEnabledPreference(audioEnabled);
+  }, [audioEnabled]);
+
+  useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const handleSystemChange = (event: MediaQueryListEvent) => {
@@ -103,6 +115,10 @@ export default function App() {
   const handleShuffleTheme = useCallback(() => {
     setThemeId((prevTheme) => pickRandomThemeForMode(colorMode, prevTheme));
   }, [colorMode]);
+
+  const handleToggleAudio = useCallback(() => {
+    setAudioEnabled((prev) => !prev);
+  }, []);
 
   const handleStateChange = useCallback((next: ShelfEngineSnapshot) => {
     setSnapshot(next);
@@ -206,7 +222,7 @@ export default function App() {
   );
 
   const footerStatus = hasUnplacedBooks ? (
-    <span className="text-xs font-normal tabular-nums opacity-45">
+    <span className="text-[15px] font-medium tabular-nums tracking-[0.03em] opacity-85 sm:text-base">
       {snapshot.shelvedCount} / {snapshot.totalCount}
     </span>
   ) : null;
@@ -217,6 +233,7 @@ export default function App() {
         volume={activeVolume}
         initialPreferences={initialPreferences}
         themeId={themeId}
+        audioEnabled={audioEnabled}
         motionShakeEnabled={motionShakeEnabled}
         controllerRef={controllerRef}
         onStateChange={handleStateChange}
@@ -228,8 +245,10 @@ export default function App() {
       <AppChrome
         themeId={themeId}
         colorMode={colorMode}
+        audioEnabled={audioEnabled}
         headerSlot={headerSlot}
         footerStatus={footerStatus}
+        onToggleAudio={handleToggleAudio}
         onToggleColorMode={handleToggleColorMode}
         onShuffleTheme={handleShuffleTheme}
         onOpenHelp={() => setHelpOpen(true)}

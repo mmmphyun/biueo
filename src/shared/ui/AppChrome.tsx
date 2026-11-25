@@ -5,8 +5,10 @@ import { DESK_THEMES } from '../theme/deskThemes';
 interface AppChromeProps {
   readonly themeId: DeskThemeId;
   readonly colorMode: DeskColorMode;
+  readonly audioEnabled: boolean;
   readonly headerSlot?: ReactNode;
   readonly footerStatus?: ReactNode;
+  readonly onToggleAudio: () => void;
   readonly onToggleColorMode: () => void;
   readonly onShuffleTheme: () => void;
   readonly onOpenHelp: () => void;
@@ -15,8 +17,10 @@ interface AppChromeProps {
 export function AppChrome({
   themeId,
   colorMode,
+  audioEnabled,
   headerSlot,
   footerStatus,
+  onToggleAudio,
   onToggleColorMode,
   onShuffleTheme,
   onOpenHelp,
@@ -42,6 +46,37 @@ export function AppChrome({
         className="fixed top-2.5 right-3 z-20 flex items-center gap-2.5 sm:top-4 sm:right-6 sm:gap-4"
       >
         {headerSlot}
+
+        <button
+          type="button"
+          onClick={onToggleAudio}
+          aria-pressed={audioEnabled}
+          aria-label={audioEnabled ? '소리 끄기' : '소리 켜기'}
+          title={audioEnabled ? '소리 켜짐 · 눌러서 음소거' : '소리 꺼짐 · 눌러서 소리 켜기'}
+          className="desk-ink-action flex h-8 w-8 items-center justify-center opacity-68 hover:opacity-100"
+        >
+          <svg
+            aria-hidden="true"
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.65"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M2.5 6.2H5.1L8.4 3.4V12.6L5.1 9.8H2.5V6.2Z" />
+            {audioEnabled ? (
+              <>
+                <path d="M10.7 5.7C11.4 6.4 11.7 7.2 11.7 8C11.7 8.8 11.4 9.6 10.7 10.3" />
+                <path d="M12.6 4.1C13.7 5.2 14.3 6.5 14.3 8C14.3 9.5 13.7 10.8 12.6 11.9" />
+              </>
+            ) : (
+              <path d="M11 5.6L14.2 10.4M14.2 5.6L11 10.4" />
+            )}
+          </svg>
+        </button>
 
         <button
           type="button"

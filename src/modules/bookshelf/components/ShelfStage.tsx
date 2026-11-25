@@ -15,6 +15,7 @@ interface ShelfStageProps {
   readonly volume: ShelfVolume;
   readonly initialPreferences: UserPreferences;
   readonly themeId: DeskThemeId;
+  readonly audioEnabled: boolean;
   readonly motionShakeEnabled: boolean;
   readonly controllerRef: React.RefObject<ShelfEngineController | null>;
   readonly onStateChange: (snapshot: ShelfEngineSnapshot) => void;
@@ -27,6 +28,7 @@ export function ShelfStage({
   volume,
   initialPreferences,
   themeId,
+  audioEnabled,
   motionShakeEnabled,
   controllerRef,
   onStateChange,
@@ -85,6 +87,10 @@ export function ShelfStage({
   useEffect(() => {
     controllerRef.current?.setTheme(themeId);
   }, [controllerRef, themeId]);
+
+  useEffect(() => {
+    controllerRef.current?.setAudioEnabled(audioEnabled);
+  }, [controllerRef, audioEnabled]);
 
   useEffect(() => {
     controllerRef.current?.setMotionShakeEnabled(motionShakeEnabled);
