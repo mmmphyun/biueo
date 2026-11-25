@@ -60,11 +60,23 @@ describe('deskThemes curated light/dark pools, random selection & WCAG AA contra
     }
   });
 
-  it('meets WCAG AA (>= 4.5:1) contrast for ink, dockInk, and dockMuted across all 8 themes', () => {
+  it('meets WCAG AA (>= 4.5:1) contrast for all semantic text and border tokens across all 8 themes', () => {
     for (const theme of Object.values(DESK_THEMES)) {
       expect(contrastRatio(theme.ink, theme.bg)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(theme.inkMuted, theme.bg)).toBeGreaterThanOrEqual(4.5);
+
       expect(contrastRatio(theme.dockInk, theme.dockSurface)).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(theme.dockMuted, theme.dockSurface)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(theme.dockDanger, theme.dockSurface)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(theme.dockSuccess, theme.dockSurface)).toBeGreaterThanOrEqual(4.5);
+
+      expect(contrastRatio(theme.dockInk, theme.dockInputBg)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(theme.dockMuted, theme.dockInputBg)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(theme.dockDanger, theme.dockInputBg)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(theme.dockSuccess, theme.dockInputBg)).toBeGreaterThanOrEqual(4.5);
+
+      expect(contrastRatio(theme.dockAccentInk, theme.dockAccent)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(theme.dockBorderStrong, theme.dockSurface)).toBeGreaterThanOrEqual(3.0);
     }
   });
 });
