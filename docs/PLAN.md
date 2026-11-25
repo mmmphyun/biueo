@@ -48,9 +48,10 @@
 ## 3. Verified Scientific Foundation (요약)
 
 상세 원논문 서지 정보는 `docs/CONTRACTS.md` 7.3절을 따릅니다.
-- **Holmes et al. (2009, 2010, *PLoS ONE*)**: 시공간 작업기억 간섭으로 침투 시각 기억 감소. 언어 과제는 오히려 증가 -> 비언어 책장 정리와 언어 리츄얼의 분리 근거.
-- **Brooks et al. (2016, *OBHDP*)**: 의례(Ritual) 프레임이 심박수·상태 불안 감소 -> 걸쇠 해제·흔들기·정리·걸쇠 잠금 시퀀스 근거.
-- **Cascio, Falk et al. (2016, *SCAN*)**: 자기확언의 mPFC/PCC 및 보상 회로(vmPFC·복측 선조체) 활성, 미래지향적 성찰로 증폭 -> `future_action` 프롬프트 근거.
+- **Holmes et al. (2009, 2010, *PLoS ONE*)**: 시공간 작업기억 간섭으로 외상성 시각 잔상 감소(언어 과제는 증가) -> 비언어 책장 정리와 글쓰기 화면 분리의 참고 근거(원논문 고부하 과제와 일상 걱정 간 차이는 한계로 명시).
+- **Hobson et al. (2018, *PSPR*)**: 의례(Ritual)의 상향식 주의 고정과 하향식 의미 부여 통합 종설 -> 걸쇠 해제·흔들기·정리·걸쇠 잠금 시퀀스 참고.
+- **Kyeong, Kim et al. (2017, *Scientific Reports*)**: 감사 명상 중 원망 조건 대비 평균 심박수 감소 및 편도체·전전두피질·뇌-심장 연결성 변화 관찰 -> `gratitude` 질문 근거.
+- **Cascio, Falk et al. (2016, *SCAN*)**: 자기확언의 mPFC/PCC 및 보상 회로(vmPFC·복측 선조체) 활성, 미래지향적 성찰로 증폭 -> `future_action` 프롬프트 참고.
 - **Seligman et al. (2005, *American Psychologist*)**: 대표 강점 활용, Three Good Things, 감사의 장기 안녕감 효과 -> `strength_recall`, `self_compassion`, `gratitude` 프롬프트 근거.
 - **Bolier et al. (2013, *BMC Public Health*)**: 39개 RCT 메타분석(주관적 안녕감 g = 0.34, 심리적 안녕감 g = 0.20, 우울 g = 0.23) -> 과장 없는 한계 고지 근거.
 

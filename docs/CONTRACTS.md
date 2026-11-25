@@ -299,17 +299,18 @@ export interface ShelfEngineController {
 
 ### 7.1 4종 리츄얼 프롬프트 풀 (4축 × 4변형 = 16문항, 시드 고정 배정)
 각 축의 4개 구어체 질문 중 `book.seed` 해시로 책당 1문항을 결정론적으로 배정하며, 기본 대표 질문은 아래와 같습니다.
-1. **`strength_recall` (강점 회고)**: `"최근 내 강점이 잘 드러났던 순간이 있다면?"` 외 3종
-2. **`future_action` (오늘의 행동)**: `"오늘 살려보고 싶은 내 강점과 작은 행동은?"` 외 3종
-3. **`self_compassion` (자기격려)**: `"오늘 하루를 보낸 나에게 건네고 싶은 말은?"` 외 3종
+1. **`strength_recall` (강점 회고)**: `"최근에 내 장점이 잘 살아났던 순간이 있나요?"` 외 3종
+2. **`future_action` (오늘의 행동)**: `"오늘 써먹어 보고 싶은 내 강점과 작은 행동은요?"` 외 3종
+3. **`self_compassion` (자기격려)**: `"오늘 하루를 보낸 나한테 해주고 싶은 말이 있나요?"` 외 3종
 4. **`gratitude` (작은 감사)**: `"요즘 작게라도 고마웠던 일이나 사람이 있나요?"` 외 3종
 
 ### 7.2 비언어 어포던스 (텍스트 유령 힌트 폐기)
 하단 `GhostHint.tsx` 및 1회성 텍스트 유령 힌트 문자열은 제거했으며, 초기 `2.5s` 유휴 미세 흔들림·황동 걸쇠 반짝임(Glint)·통합 손 커서(`grab`/`grabbing`)·완결 시(`36/36` 또는 `60/60`) 걸쇠 흔들림으로 조작을 안내합니다. 미배치 책이 남았을 때만 하단에 비대화형 `{shelved} / {total}` 카운터를 표시하며, `UserPreferences.hintsSeen`은 v1 저장 스키마 호환성 유지를 위해서만 보존합니다.
 
-### 7.3 논문 근거 모달 고정 출처 (5편)
-1. Holmes, E. A., James, E. L., Coode-Bate, T., & Deeprose, C. (2009). *Can Playing the Computer Game "Tetris" Reduce the Build-Up of Flashbacks for Trauma?* PLoS ONE, 4(1), e4153. (후속: Holmes et al., 2010, PLoS ONE — 시공간 과제 vs 언어 과제 비교)
-2. Brooks, A. W., Schroeder, J., Risen, J. L., Gino, F., Galinsky, A. D., Norton, M. I., & Schweitzer, M. E. (2016). *Don't stop believing: Rituals improve performance by decreasing anxiety.* Organizational Behavior and Human Decision Processes, 137, 71-85.
-3. Cascio, C. N., O'Donnell, M. B., Tinney, F. J., Lieberman, M. D., Taylor, S. E., Strecher, V. J., & Falk, E. B. (2016). *Self-affirmation activates brain systems associated with self-related processing and reward and is reinforced by future orientation.* Social Cognitive and Affective Neuroscience, 11(4), 621-629.
-4. Seligman, M. E. P., Steen, T. A., Park, N., & Peterson, C. (2005). *Positive psychology progress: Empirical validation of interventions.* American Psychologist, 60(5), 410-421.
-5. Bolier, L., Haverman, M., Westerhof, G. J., Riper, H., Smit, F., & Bohlmeijer, E. (2013). *Positive psychology interventions: a meta-analysis of randomized controlled studies.* BMC Public Health, 13, 119. (주관적 안녕감 g = 0.34, 심리적 안녕감 g = 0.20, 우울 증상 g = 0.23)
+### 7.3 논문 근거 모달 고정 출처 (6편)
+1. Holmes, E. A., James, E. L., Coode-Bate, T., & Deeprose, C. (2009). *Can Playing the Computer Game "Tetris" Reduce the Build-Up of Flashbacks for Trauma?* PLoS ONE, 4(1), e4153. (후속: Holmes et al., 2010, PLoS ONE, e13706 — 시공간 과제 vs 언어 과제 비교; DOI: `10.1371/journal.pone.0004153`, `10.1371/journal.pone.0013706`)
+2. Hobson, N. M., Schroeder, J., Risen, J. L., Xygalatas, D., & Inzlicht, M. (2018). *The Psychology of Rituals: An Integrative Review and Process-Based Framework.* Personality and Social Psychology Review, 22(3), 260-284. (DOI: `10.1177/1088868317734944`)
+3. Kyeong, S., Kim, J., Kim, D. J., Kim, H. E., & Kim, J.-J. (2017). *Effects of gratitude meditation on neural network functional connectivity and brain-heart coupling.* Scientific Reports, 7, 5058. (DOI: `10.1038/s41598-017-05520-9`)
+4. Cascio, C. N., O'Donnell, M. B., Tinney, F. J., Lieberman, M. D., Taylor, S. E., Strecher, V. J., & Falk, E. B. (2016). *Self-affirmation activates brain systems associated with self-related processing and reward and is reinforced by future orientation.* Social Cognitive and Affective Neuroscience, 11(4), 621-629. (DOI: `10.1093/scan/nsv136`)
+5. Seligman, M. E. P., Steen, T. A., Park, N., & Peterson, C. (2005). *Positive psychology progress: Empirical validation of interventions.* American Psychologist, 60(5), 410-421. (DOI: `10.1037/0003-066X.60.5.410`)
+6. Bolier, L., Haverman, M., Westerhof, G. J., Riper, H., Smit, F., & Bohlmeijer, E. (2013). *Positive psychology interventions: a meta-analysis of randomized controlled studies.* BMC Public Health, 13, 119. (주관적 안녕감 g = 0.34, 심리적 안녕감 g = 0.20, 우울 증상 g = 0.23; DOI: `10.1186/1471-2458-13-119`)
