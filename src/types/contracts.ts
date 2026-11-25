@@ -50,6 +50,8 @@ export interface ShelfSlotPlacement {
   compartmentIndex: number;
   /** 칸 내부 좌->우 정렬 순서 (0-based) */
   orderInCompartment: number;
+  /** 칸 내부 정규화 좌측 x 좌표 ([COMPARTMENT_SIDE_MARGIN .. 1 - COMPARTMENT_SIDE_MARGIN - widthNorm]) */
+  normX?: number;
 }
 
 export interface BookModel {

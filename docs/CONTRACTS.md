@@ -60,6 +60,8 @@ export interface ShelfSlotPlacement {
   compartmentIndex: number;
   /** 칸 내부 좌->우 정렬 순서 (0-based) */
   orderInCompartment: number;
+  /** 칸 내부 정규화 좌측 x 좌표 */
+  normX?: number;
 }
 
 export interface BookModel {
@@ -231,6 +233,7 @@ export interface ShelfEngineController {
 1. **드래그 vs 짧은 탭 분기 (`OPEN_TIDYING`)**:
    - 포인터 다운 후 업까지의 유클리드 이동 거리가 `6px 미만`이고 경과 시간이 `220ms 미만`이면 `onBookTap(bookId)`를 발생시킵니다.
    - `6px 이상` 이동 시 즉시 드래그 상태로 전환해 책을 집어 올립니다(리프트 스케일 `1.04`, 그림자 오프셋 `(+10px, +13px)`).
+   - 칸 내부 배치 시 중앙 강제 재정렬 없이 드롭한 가로 위치(`normX`)를 그대로 유지하며, 겹칠 때만 인접 책을 최소 폭만큼 밀어냅니다. 책을 빼낼 때도 남은 책의 가로 위치는 고정됩니다.
 2. **흔들기 트리거**:
    - **프레임 직접 잡기 흔들기**: 닫힌 유리문 상태(`LOCKED_NEAT` / `SHAKING_CHAOS`)에서만 책장 프레임 클릭·드래그를 허용(`OPEN_TIDYING`에서는 개별 책 조작 보호를 위해 비활성화)합니다. 책장은 포인터를 스프링으로 추적하며 이동 속도에 비례해 기울고, 가속도 반대 관성력(`-a`)·기울기 중력을 주입해 흔들림 세기에 맞춰 책들을 점진적으로 풀어 떨어뜨립니다.
    - **키보드 / 버튼**: `흔들기` 버튼 및 `Space` 홀드(`140ms` 간격)는 미이탈 책을 일괄 해제해 즉각 전권 난투 충격을 주입합니다(`prefers-reduced-motion: reduce` 시 시각 흔들림 진폭 30% 축소).

@@ -177,6 +177,72 @@ export function computeBookDimensions(
   };
 }
 
+export interface HorizontalSlotRequest {
+  readonly bookId: string;
+  readonly widthNorm: number;
+  readonly desiredNormX: number;
+}
+
+/**
+ * 좌->우 순서로 정렬된 책들의 희망 가로 좌표를 칸 경계 및 최소 간격을 지키며 최소 이동으로 해소한다.
+ */
+export function resolveCompartmentNormX(
+  orderedRequests: readonly HorizontalSlotRequest[]
+): Map<string, number> {
+  const result = new Map<string, number>();
+  const n = orderedRequests.length;
+  if (n === 0) return result;
+
+  const minX = COMPARTMENT_SIDE_MARGIN;
+  const maxRight = COMPARTMENT_SIDE_MARGIN + COMPARTMENT_USABLE_WIDTH;
+  const gap = BOOK_GAP_RATIO;
+
+  const xs = orderedRequests.map((req) =>
+    Math.min(Math.max(minX, maxRight - req.widthNorm), Math.max(minX, req.desiredNormX))
+  );
+
+  for (let i = 1; i < n; i += 1) {
+    xs[i] = Math.max(xs[i], xs[i - 1] + orderedRequests[i - 1].widthNorm + gap);
+  }
+
+  xs[n - 1] = Math.min(xs[n - 1], Math.max(minX, maxRight - orderedRequests[n - 1].widthNorm));
+  for (let i = n - 2; i >= 0; i -= 1) {
+    xs[i] = Math.min(xs[i], xs[i + 1] - orderedRequests[i].widthNorm - gap);
+  }
+
+  for (let i = 0; i < n; i += 1) {
+    result.set(orderedRequests[i].bookId, xs[i]);
+  }
+  return result;
+}
+
+export function computeBookSlotNormX(
+  booksInCompartment: readonly BookModel[]
+): Map<string, number> {
+  const ordered = [...booksInCompartment].sort(
+    (a, b) =>
+      (a.placement?.orderInCompartment ?? 0) - (b.placement?.orderInCompartment ?? 0)
+  );
+  if (ordered.length === 0) return new Map();
+
+  const totalNormWidth =
+    ordered.reduce((sum, b) => sum + BOOK_THICKNESS_RATIOS[b.thicknessTier], 0) +
+    Math.max(0, ordered.length - 1) * BOOK_GAP_RATIO;
+  let fallbackCursor =
+    COMPARTMENT_SIDE_MARGIN + Math.max(0, (COMPARTMENT_USABLE_WIDTH - totalNormWidth) * 0.5);
+
+  const requests: HorizontalSlotRequest[] = ordered.map((book) => {
+    const widthNorm = BOOK_THICKNESS_RATIOS[book.thicknessTier];
+    const stored = book.placement?.normX;
+    const desiredNormX =
+      typeof stored === 'number' && Number.isFinite(stored) ? stored : fallbackCursor;
+    fallbackCursor += widthNorm + BOOK_GAP_RATIO;
+    return { bookId: book.id, widthNorm, desiredNormX };
+  });
+
+  return resolveCompartmentNormX(requests);
+}
+
 export function computeBookSlotRects(
   booksInCompartment: readonly BookModel[],
   compartment: CompartmentRect
@@ -185,26 +251,18 @@ export function computeBookSlotRects(
     (a, b) =>
       (a.placement?.orderInCompartment ?? 0) - (b.placement?.orderInCompartment ?? 0)
   );
-  const totalNormWidth =
-    ordered.reduce((sum, b) => sum + BOOK_THICKNESS_RATIOS[b.thicknessTier], 0) +
-    Math.max(0, ordered.length - 1) * BOOK_GAP_RATIO;
-
-  const startNormX =
-    COMPARTMENT_SIDE_MARGIN + Math.max(0, (COMPARTMENT_USABLE_WIDTH - totalNormWidth) * 0.5);
-
+  const normXMap = computeBookSlotNormX(ordered);
   const result = new Map<string, Rect>();
-  let cursorX = compartment.x + startNormX * compartment.w;
-  const gapPx = BOOK_GAP_RATIO * compartment.w;
 
   for (const book of ordered) {
+    const normX = normXMap.get(book.id) ?? COMPARTMENT_SIDE_MARGIN;
     const { widthPx, heightPx } = computeBookDimensions(book, compartment);
     result.set(book.id, {
-      x: cursorX,
+      x: compartment.x + normX * compartment.w,
       y: compartment.y + compartment.h - heightPx - 1,
       w: widthPx,
       h: heightPx,
     });
-    cursorX += widthPx + gapPx;
   }
 
   return result;

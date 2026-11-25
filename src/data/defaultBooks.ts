@@ -12,6 +12,10 @@ import type {
 import {
   BOOK_COLOR_IDS,
   BOOK_COLORS,
+  BOOK_GAP_RATIO,
+  BOOK_THICKNESS_RATIOS,
+  COMPARTMENT_SIDE_MARGIN,
+  COMPARTMENT_USABLE_WIDTH,
   RITUAL_PROMPT_TYPES,
   RITUAL_PROMPTS,
   SPINE_MOTIFS,
@@ -128,6 +132,28 @@ export function createDefaultVolume(
       note,
     };
   });
+
+  // 초기 책들이 4권 중 일부가 빠지더라도 남은 책이 가운데로 몰리지 않도록 초기 normX를 부여한다.
+  const totalComp = gridCols * gridRows;
+  for (let compIdx = 0; compIdx < totalComp; compIdx += 1) {
+    const inComp = books
+      .filter((b) => b.placement?.compartmentIndex === compIdx)
+      .sort(
+        (a, b) =>
+          (a.placement?.orderInCompartment ?? 0) - (b.placement?.orderInCompartment ?? 0)
+      );
+    const totalNormWidth =
+      inComp.reduce((sum, b) => sum + BOOK_THICKNESS_RATIOS[b.thicknessTier], 0) +
+      Math.max(0, inComp.length - 1) * BOOK_GAP_RATIO;
+    let cursor =
+      COMPARTMENT_SIDE_MARGIN + Math.max(0, (COMPARTMENT_USABLE_WIDTH - totalNormWidth) * 0.5);
+    for (const book of inComp) {
+      if (book.placement) {
+        book.placement.normX = cursor;
+      }
+      cursor += BOOK_THICKNESS_RATIOS[book.thicknessTier] + BOOK_GAP_RATIO;
+    }
+  }
 
   return {
     id: `vol-${volumeNumber}-${gridPreset}`,
