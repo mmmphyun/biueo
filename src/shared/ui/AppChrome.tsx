@@ -1,14 +1,12 @@
 import type { ReactNode } from 'react';
 import type { DeskColorMode, DeskThemeId } from '../../types/contracts';
 import { DESK_THEMES } from '../theme/deskThemes';
-import { GhostHint } from './GhostHint';
 
 interface AppChromeProps {
   readonly themeId: DeskThemeId;
   readonly colorMode: DeskColorMode;
-  readonly hintMessage: string | null;
   readonly headerSlot?: ReactNode;
-  readonly actionSlot?: ReactNode;
+  readonly footerStatus?: ReactNode;
   readonly onToggleColorMode: () => void;
   readonly onShuffleTheme: () => void;
   readonly onOpenHelp: () => void;
@@ -17,9 +15,8 @@ interface AppChromeProps {
 export function AppChrome({
   themeId,
   colorMode,
-  hintMessage,
   headerSlot,
-  actionSlot,
+  footerStatus,
   onToggleColorMode,
   onShuffleTheme,
   onOpenHelp,
@@ -82,16 +79,15 @@ export function AppChrome({
         </button>
       </div>
 
-      <GhostHint themeId={themeId} message={hintMessage} />
-
-      {actionSlot && (
-        <nav
-          aria-label="주 조작"
+      {footerStatus && (
+        <div
+          role="status"
+          aria-live="polite"
           style={{ color: theme.ink }}
-          className="fixed bottom-3.5 left-1/2 z-20 flex w-max -translate-x-1/2 items-center gap-7 sm:bottom-5 sm:gap-8"
+          className="pointer-events-none fixed bottom-3.5 left-1/2 z-10 -translate-x-1/2 sm:bottom-5"
         >
-          {actionSlot}
-        </nav>
+          {footerStatus}
+        </div>
       )}
     </>
   );

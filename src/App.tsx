@@ -21,33 +21,11 @@ import type {
   DeskColorMode,
   DeskThemeId,
   DetectedOrder,
-  OnboardingHintsSeen,
   ShelfEngineController,
   ShelfEngineSnapshot,
   ShelfGridPreset,
   ShelfVolume,
 } from './types/contracts';
-
-function selectActiveShelfHint(
-  snapshot: ShelfEngineSnapshot,
-  hintsSeen: OnboardingHintsSeen
-): string | null {
-  if (!snapshot.isDoorOpen && snapshot.state !== 'SHAKING_CHAOS' && !hintsSeen.shakeOrUnlatch) {
-    return '책장을 흔들어 비우거나, 오른쪽 걸쇠를 열어보세요';
-  }
-  if (snapshot.isDoorOpen && !hintsSeen.dragOrTapBook) {
-    return '책을 끌어다 꽂거나, 짧게 눌러 페이지를 펼쳐보세요';
-  }
-  if (
-    snapshot.isDoorOpen &&
-    snapshot.shelvedCount === snapshot.totalCount &&
-    hintsSeen.dragOrTapBook &&
-    !hintsSeen.closeLatch
-  ) {
-    return '정리가 끝나면 오른쪽 걸쇠를 눌러 문을 닫아보세요';
-  }
-  return null;
-}
 
 export default function App() {
   const controllerRef = useRef<ShelfEngineController | null>(null);
@@ -64,11 +42,6 @@ export default function App() {
     pickRandomThemeForMode(initialModeInfo.mode, readLastThemeId())
   );
   const [motionShakeEnabled, setMotionShakeEnabled] = useState(false);
-  const [hintsSeen, setHintsSeen] = useState<OnboardingHintsSeen>({
-    shakeOrUnlatch: false,
-    dragOrTapBook: false,
-    closeLatch: false,
-  });
   const [helpOpen, setHelpOpen] = useState(false);
   const [tappedBookId, setTappedBookId] = useState<string | null>(null);
 
@@ -87,8 +60,6 @@ export default function App() {
     writtenCount: activeVolume.books.filter((b) => b.note !== null).length,
     isDoorOpen: false,
   }));
-
-  const prevDoorOpenRef = useRef(false);
 
   const motionSupported = useMemo(() => {
     if (typeof window === 'undefined') return false;
@@ -135,29 +106,14 @@ export default function App() {
 
   const handleStateChange = useCallback((next: ShelfEngineSnapshot) => {
     setSnapshot(next);
-    setHintsSeen((prev) => {
-      let updated = prev;
-      if (!prev.shakeOrUnlatch && (next.state === 'SHAKING_CHAOS' || next.isDoorOpen)) {
-        updated = { ...updated, shakeOrUnlatch: true };
-      }
-      if (!prev.closeLatch && prevDoorOpenRef.current && !next.isDoorOpen) {
-        updated = { ...updated, closeLatch: true };
-      }
-      return updated;
-    });
-    prevDoorOpenRef.current = next.isDoorOpen;
   }, []);
 
   const handleBookTap = useCallback((bookId: string) => {
-    setHintsSeen((prev) => (prev.dragOrTapBook ? prev : { ...prev, dragOrTapBook: true }));
     setTappedBookId(bookId);
   }, []);
 
   const handleShelfCommit = useCallback(
     (books: BookModel[]) => {
-      if (prevDoorOpenRef.current) {
-        setHintsSeen((prev) => (prev.dragOrTapBook ? prev : { ...prev, dragOrTapBook: true }));
-      }
       setVolumesByPreset((prev) => ({
         ...prev,
         [gridPreset]: {
@@ -171,7 +127,7 @@ export default function App() {
   );
 
   const handleTidyComplete = useCallback((_orders: DetectedOrder[]) => {
-    setHintsSeen((prev) => (prev.closeLatch ? prev : { ...prev, closeLatch: true }));
+    // Phase 2 순수 감각 보상(차임/파스텔 반짝임) 연결 지점
   }, []);
 
   const handleToggleMotionShake = useCallback(async () => {
@@ -201,8 +157,7 @@ export default function App() {
     () => activeVolume.books.find((b) => b.id === tappedBookId) ?? null,
     [activeVolume.books, tappedBookId]
   );
-  const isAllShelved = snapshot.shelvedCount === snapshot.totalCount;
-  const activeHintMessage = selectActiveShelfHint(snapshot, hintsSeen);
+  const hasUnplacedBooks = snapshot.shelvedCount < snapshot.totalCount;
 
   const headerSlot = (
     <>
@@ -250,41 +205,11 @@ export default function App() {
     </>
   );
 
-  const actionSlot = !snapshot.isDoorOpen ? (
-    <>
-      <button
-        type="button"
-        onClick={() => controllerRef.current?.triggerShake(0.85)}
-        style={{ borderColor: theme.ink }}
-        className="desk-ink-action min-h-9 border-b-[1.5px] px-0.5 pb-0.5 text-[13px] font-semibold tracking-[-0.01em] hover:opacity-75 sm:text-sm"
-      >
-        흔들기
-      </button>
-      <button
-        type="button"
-        onClick={() => controllerRef.current?.toggleDoor()}
-        className="desk-ink-action min-h-9 px-0.5 pb-0.5 text-[13px] font-medium tracking-[-0.01em] opacity-70 hover:opacity-100 sm:text-sm"
-      >
-        문 열기
-      </button>
-    </>
-  ) : (
-    <button
-      type="button"
-      onClick={() => controllerRef.current?.toggleDoor()}
-      style={{ borderColor: isAllShelved ? theme.ink : 'transparent' }}
-      className={`desk-ink-action flex min-h-9 items-baseline gap-2 border-b-[1.5px] px-0.5 pb-0.5 text-[13px] tracking-[-0.01em] sm:text-sm ${
-        isAllShelved ? 'font-semibold opacity-100' : 'font-medium opacity-78 hover:opacity-100'
-      }`}
-    >
-      <span>걸쇠 잠그기</span>
-      {!isAllShelved && (
-        <span className="text-xs font-normal tabular-nums opacity-65">
-          {snapshot.shelvedCount}/{snapshot.totalCount}
-        </span>
-      )}
-    </button>
-  );
+  const footerStatus = hasUnplacedBooks ? (
+    <span className="text-xs font-normal tabular-nums opacity-45">
+      {snapshot.shelvedCount} / {snapshot.totalCount}
+    </span>
+  ) : null;
 
   return (
     <main className="relative h-dvh w-screen overflow-hidden">
@@ -303,9 +228,8 @@ export default function App() {
       <AppChrome
         themeId={themeId}
         colorMode={colorMode}
-        hintMessage={activeHintMessage}
         headerSlot={headerSlot}
-        actionSlot={actionSlot}
+        footerStatus={footerStatus}
         onToggleColorMode={handleToggleColorMode}
         onShuffleTheme={handleShuffleTheme}
         onOpenHelp={() => setHelpOpen(true)}

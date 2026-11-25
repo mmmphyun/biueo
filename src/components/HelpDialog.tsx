@@ -28,13 +28,13 @@ export function HelpDialog({ open, themeId, onClose }: HelpDialogProps) {
           </h2>
           <ul className="mt-2 space-y-1.5 text-xs leading-relaxed sm:text-sm">
             <li>
-              <strong>흔들어 비우기</strong>: 책장 프레임을 끌거나 스페이스바, 흔들기 버튼을 누르면 닫힌 유리문 안에서 책들이 무너집니다.
+              <strong>흔들어 비우기</strong>: 닫힌 책장 프레임을 잡거나 스페이스바를 누르면 유리문 안에서 책들이 무너집니다.
             </li>
             <li>
-              <strong>자유롭게 다시 꽂기</strong>: 오른쪽 황동 걸쇠를 열어 원하는 칸에 책을 꽂으세요. 정답이나 감점은 없습니다.
+              <strong>문 열고 자유롭게 정리하기</strong>: 오른쪽 황동 걸쇠(또는 Enter 키)로 문을 열고 원하는 만큼만 꽂아도 다시 닫을 수 있습니다. 정답이나 감점은 없습니다.
             </li>
             <li>
-              <strong>짧게 눌러 책 펼치기</strong>: 문이 열린 상태에서 책을 짧게 누르면 1페이지 질문과 기록을 확인할 수 있습니다.
+              <strong>짧게 눌러 책 펼치기</strong>: 문이 열린 상태에서 책을 짧게 누르면 1페이지 질문을 확인할 수 있습니다.
             </li>
           </ul>
         </section>
