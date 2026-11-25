@@ -1,13 +1,24 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { BookPeekDialog } from './components/BookPeekDialog';
-import { GhostHint } from './components/GhostHint';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HelpDialog } from './components/HelpDialog';
-import { MinimalHud } from './components/MinimalHud';
-import { ShelfStage } from './components/ShelfStage';
-import { createDefaultPreferences, createDefaultVolume } from './data/defaultBooks';
-import { DESK_THEMES } from './data/palette';
+import { BookPeekDialog } from './modules/bookshelf/components/BookPeekDialog';
+import { ShelfStage } from './modules/bookshelf/components/ShelfStage';
+import {
+  createDefaultPreferences,
+  createDefaultVolume,
+} from './modules/bookshelf/data/defaultBooks';
+import {
+  DESK_THEMES,
+  pickRandomThemeForMode,
+  readLastThemeId,
+  resolveInitialColorMode,
+  saveLastThemeId,
+  saveManualColorMode,
+  syncDocumentColorScheme,
+} from './shared/theme/deskThemes';
+import { AppChrome } from './shared/ui/AppChrome';
 import type {
   BookModel,
+  DeskColorMode,
   DeskThemeId,
   DetectedOrder,
   OnboardingHintsSeen,
@@ -17,15 +28,41 @@ import type {
   ShelfVolume,
 } from './types/contracts';
 
+function selectActiveShelfHint(
+  snapshot: ShelfEngineSnapshot,
+  hintsSeen: OnboardingHintsSeen
+): string | null {
+  if (!snapshot.isDoorOpen && snapshot.state !== 'SHAKING_CHAOS' && !hintsSeen.shakeOrUnlatch) {
+    return '책장을 흔들어 비우거나, 오른쪽 걸쇠를 열어보세요';
+  }
+  if (snapshot.isDoorOpen && !hintsSeen.dragOrTapBook) {
+    return '책을 끌어다 꽂거나, 짧게 눌러 페이지를 펼쳐보세요';
+  }
+  if (
+    snapshot.isDoorOpen &&
+    snapshot.shelvedCount === snapshot.totalCount &&
+    hintsSeen.dragOrTapBook &&
+    !hintsSeen.closeLatch
+  ) {
+    return '정리가 끝나면 오른쪽 걸쇠를 눌러 문을 닫아보세요';
+  }
+  return null;
+}
+
 export default function App() {
   const controllerRef = useRef<ShelfEngineController | null>(null);
+  const initialModeInfo = useMemo(() => resolveInitialColorMode(), []);
+  const isManualModeRef = useRef(initialModeInfo.isManualOverride);
 
   const [volumesByPreset, setVolumesByPreset] = useState<Record<ShelfGridPreset, ShelfVolume>>(() => ({
     '3x3': createDefaultVolume(1, '3x3'),
     '5x3': createDefaultVolume(1, '5x3'),
   }));
   const [gridPreset, setGridPreset] = useState<ShelfGridPreset>('3x3');
-  const [themeId, setThemeId] = useState<DeskThemeId>('sage');
+  const [colorMode, setColorMode] = useState<DeskColorMode>(initialModeInfo.mode);
+  const [themeId, setThemeId] = useState<DeskThemeId>(() =>
+    pickRandomThemeForMode(initialModeInfo.mode, readLastThemeId())
+  );
   const [motionShakeEnabled, setMotionShakeEnabled] = useState(false);
   const [hintsSeen, setHintsSeen] = useState<OnboardingHintsSeen>({
     shakeOrUnlatch: false,
@@ -37,8 +74,8 @@ export default function App() {
 
   const activeVolume = volumesByPreset[gridPreset];
   const initialPreferences = useMemo(
-    () => createDefaultPreferences(activeVolume.id),
-    // 최초 마운트 스냅샷만 전달한다.
+    () => createDefaultPreferences(activeVolume.id, themeId),
+    // 최초 마운트 스냅샷만 엔진에 전달한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -60,6 +97,41 @@ export default function App() {
       window.matchMedia('(pointer: coarse)').matches
     );
   }, []);
+
+  useEffect(() => {
+    syncDocumentColorScheme(colorMode);
+  }, [colorMode]);
+
+  useEffect(() => {
+    saveLastThemeId(themeId);
+  }, [themeId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleSystemChange = (event: MediaQueryListEvent) => {
+      if (isManualModeRef.current) return;
+      const nextMode: DeskColorMode = event.matches ? 'dark' : 'light';
+      setColorMode(nextMode);
+      setThemeId((prev) => pickRandomThemeForMode(nextMode, prev));
+    };
+    media.addEventListener('change', handleSystemChange);
+    return () => media.removeEventListener('change', handleSystemChange);
+  }, []);
+
+  const handleToggleColorMode = useCallback(() => {
+    setColorMode((prevMode) => {
+      const nextMode: DeskColorMode = prevMode === 'light' ? 'dark' : 'light';
+      isManualModeRef.current = true;
+      saveManualColorMode(nextMode);
+      setThemeId((prevTheme) => pickRandomThemeForMode(nextMode, prevTheme));
+      return nextMode;
+    });
+  }, []);
+
+  const handleShuffleTheme = useCallback(() => {
+    setThemeId((prevTheme) => pickRandomThemeForMode(colorMode, prevTheme));
+  }, [colorMode]);
 
   const handleStateChange = useCallback((next: ShelfEngineSnapshot) => {
     setSnapshot(next);
@@ -129,6 +201,90 @@ export default function App() {
     () => activeVolume.books.find((b) => b.id === tappedBookId) ?? null,
     [activeVolume.books, tappedBookId]
   );
+  const isAllShelved = snapshot.shelvedCount === snapshot.totalCount;
+  const activeHintMessage = selectActiveShelfHint(snapshot, hintsSeen);
+
+  const headerSlot = (
+    <>
+      {motionSupported && (
+        <button
+          type="button"
+          aria-pressed={motionShakeEnabled}
+          onClick={handleToggleMotionShake}
+          className="desk-ink-action flex min-h-8 items-center gap-1.5 px-1 text-[11px] font-medium opacity-75 hover:opacity-100 sm:text-xs"
+        >
+          {motionShakeEnabled && (
+            <span
+              aria-hidden="true"
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: theme.ink }}
+            />
+          )}
+          <span>폰 흔들기</span>
+        </button>
+      )}
+
+      <div
+        role="group"
+        aria-label="책장 크기 선택"
+        className="flex items-center gap-1.5 sm:gap-2.5"
+      >
+        {(['3x3', '5x3'] as const).map((preset) => {
+          const active = gridPreset === preset;
+          return (
+            <button
+              key={preset}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setGridPreset(preset)}
+              style={{ borderColor: active ? theme.ink : 'transparent' }}
+              className={`desk-ink-action min-h-8 border-b-[1.5px] px-0.5 text-xs tracking-tight sm:text-[13px] ${
+                active ? 'font-semibold opacity-100' : 'font-normal opacity-50 hover:opacity-85'
+              }`}
+            >
+              {preset === '3x3' ? '3×3' : '5×3'}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+
+  const actionSlot = !snapshot.isDoorOpen ? (
+    <>
+      <button
+        type="button"
+        onClick={() => controllerRef.current?.triggerShake(0.85)}
+        style={{ borderColor: theme.ink }}
+        className="desk-ink-action min-h-9 border-b-[1.5px] px-0.5 pb-0.5 text-[13px] font-semibold tracking-[-0.01em] hover:opacity-75 sm:text-sm"
+      >
+        흔들기
+      </button>
+      <button
+        type="button"
+        onClick={() => controllerRef.current?.toggleDoor()}
+        className="desk-ink-action min-h-9 px-0.5 pb-0.5 text-[13px] font-medium tracking-[-0.01em] opacity-70 hover:opacity-100 sm:text-sm"
+      >
+        문 열기
+      </button>
+    </>
+  ) : (
+    <button
+      type="button"
+      onClick={() => controllerRef.current?.toggleDoor()}
+      style={{ borderColor: isAllShelved ? theme.ink : 'transparent' }}
+      className={`desk-ink-action flex min-h-9 items-baseline gap-2 border-b-[1.5px] px-0.5 pb-0.5 text-[13px] tracking-[-0.01em] sm:text-sm ${
+        isAllShelved ? 'font-semibold opacity-100' : 'font-medium opacity-78 hover:opacity-100'
+      }`}
+    >
+      <span>걸쇠 잠그기</span>
+      {!isAllShelved && (
+        <span className="text-xs font-normal tabular-nums opacity-65">
+          {snapshot.shelvedCount}/{snapshot.totalCount}
+        </span>
+      )}
+    </button>
+  );
 
   return (
     <main className="relative h-dvh w-screen overflow-hidden">
@@ -144,28 +300,14 @@ export default function App() {
         onTidyComplete={handleTidyComplete}
       />
 
-      <header
-        className="pointer-events-none fixed top-3.5 left-4 z-10 sm:top-5 sm:left-6"
-        style={{ color: theme.ink }}
-      >
-        <h1 className="text-[17px] font-semibold tracking-[-0.03em] opacity-90 sm:text-[19px]">
-          비우어
-        </h1>
-      </header>
-
-      <GhostHint themeId={themeId} snapshot={snapshot} hintsSeen={hintsSeen} />
-
-      <MinimalHud
+      <AppChrome
         themeId={themeId}
-        gridPreset={gridPreset}
-        snapshot={snapshot}
-        motionSupported={motionSupported}
-        motionShakeEnabled={motionShakeEnabled}
-        onShake={() => controllerRef.current?.triggerShake(0.85)}
-        onToggleDoor={() => controllerRef.current?.toggleDoor()}
-        onChangePreset={setGridPreset}
-        onChangeTheme={setThemeId}
-        onToggleMotionShake={handleToggleMotionShake}
+        colorMode={colorMode}
+        hintMessage={activeHintMessage}
+        headerSlot={headerSlot}
+        actionSlot={actionSlot}
+        onToggleColorMode={handleToggleColorMode}
+        onShuffleTheme={handleShuffleTheme}
         onOpenHelp={() => setHelpOpen(true)}
       />
 
