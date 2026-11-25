@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultVolume } from '../../data/defaultBooks';
+import { createDefaultVolume } from '../data/defaultBooks';
 import { computeBookDimensions, computeShelfLayout } from '../layout/shelfLayout';
 import { ChaosWorld } from './chaosWorld';
 import { buildNeatPoses } from './slotSystem';
@@ -13,7 +13,7 @@ describe('ChaosWorld boundary containment & speed clamping', () => {
       const refComp = layout.compartments[0];
 
       const world = new ChaosWorld(layout.innerRect);
-      world.spawnFromPoses(
+      world.spawnSeatedPoses(
         volume.books.map((book) => {
           const pose = neatPoses.get(book.id)!;
           const dims = computeBookDimensions(book, refComp);
@@ -30,14 +30,15 @@ describe('ChaosWorld boundary containment & speed clamping', () => {
 
       for (let pulse = 0; pulse < 10; pulse += 1) {
         const dir = pulse % 2 === 0 ? 1 : -1;
-        world.applyShakeImpulse(dir * 16, -12);
+        world.applyButtonShakeBurst(dir * 13, -10);
         for (let f = 0; f < 24; f += 1) {
           world.step(16.67);
         }
       }
 
       const finalPoses = world.getBodyPoses();
-      expect(finalPoses.size).toBe(volume.books.length);
+      expect(finalPoses.size + world.getSeatedCount()).toBe(volume.books.length);
+      expect(finalPoses.size).toBeGreaterThan(volume.books.length * 0.8);
 
       for (const pose of finalPoses.values()) {
         expect(pose.x).toBeGreaterThanOrEqual(layout.innerRect.x);
@@ -81,18 +82,19 @@ describe('ChaosWorld door-open desk spill cascade', () => {
     ];
 
     for (const sc of scenarios) {
-      const { volume, layout, spawns } = createSpawnList(sc.w, sc.h, sc.preset);
+      const { layout, spawns } = createSpawnList(sc.w, sc.h, sc.preset);
       const world = new ChaosWorld(layout.innerRect);
-      world.spawnFromPoses(spawns);
+      world.spawnSeatedPoses(spawns);
 
-      for (let i = 0; i < 3; i += 1) {
-        world.applyShakeImpulse((i % 2 === 0 ? 1 : -1) * 12, -8);
+      for (let i = 0; i < 6; i += 1) {
+        world.applyButtonShakeBurst((i % 2 === 0 ? 1 : -1) * 12, -8);
         for (let f = 0; f < 10; f += 1) {
           world.step(16.67);
         }
       }
 
       const preOpenPoses = world.getBodyPoses();
+      expect(preOpenPoses.size).toBeGreaterThan(0);
       let preMeanY = 0;
       for (const p of preOpenPoses.values()) preMeanY += p.y;
       preMeanY /= preOpenPoses.size;
@@ -104,7 +106,7 @@ describe('ChaosWorld door-open desk spill cascade', () => {
         world.step(16.67);
       }
       const midPoses = world.getBodyPoses();
-      expect(midPoses.size).toBe(volume.books.length);
+      expect(midPoses.size).toBe(preOpenPoses.size);
       let midMeanY = 0;
       for (const p of midPoses.values()) {
         expect(p.x).toBeGreaterThanOrEqual(0);
@@ -123,7 +125,7 @@ describe('ChaosWorld door-open desk spill cascade', () => {
       expect(world.isSpillSettled()).toBe(true);
 
       const settled = world.getBodyPoses();
-      expect(settled.size).toBe(volume.books.length);
+      expect(settled.size).toBe(preOpenPoses.size);
 
       let settledMeanY = 0;
       let exitedUpperShelfCount = 0;
@@ -153,22 +155,23 @@ describe('ChaosWorld door-open desk spill cascade', () => {
   });
 
   it('detaches a grabbed book via removeBody mid-spill and supports synchronous fastForwardSpill', () => {
-    const { volume, layout, spawns } = createSpawnList(1440, 900, '3x3');
+    const { layout, spawns } = createSpawnList(1440, 900, '3x3');
     const world = new ChaosWorld(layout.innerRect);
-    world.spawnFromPoses(spawns);
-    world.applyShakeImpulse(11, -6);
+    world.spawnSeatedPoses(spawns);
+    world.applyButtonShakeBurst(11, -6);
     world.step(16.67);
+    const dislodgedCount = world.getRemainingCount();
+    const pickedId = world.getBodyPoses().keys().next().value!;
 
     world.openDoorAndSpill(1440, 900, layout.frameRect, layout.isDesktop);
     for (let f = 0; f < 10; f += 1) {
       world.step(16.67);
     }
 
-    const pickedId = volume.books[0].id;
     expect(world.hasBody(pickedId)).toBe(true);
     expect(world.removeBody(pickedId)).toBe(true);
     expect(world.hasBody(pickedId)).toBe(false);
-    expect(world.getRemainingCount()).toBe(volume.books.length - 1);
+    expect(world.getRemainingCount()).toBe(dislodgedCount - 1);
     expect(world.getBodyPoses().has(pickedId)).toBe(false);
 
     world.fastForwardSpill(120);
@@ -223,16 +226,17 @@ describe('ChaosWorld door-open desk spill cascade', () => {
   it('transitions a late mid-spill drop cleanly into full-gravity desk_drop', () => {
     const { layout, spawns } = createSpawnList(1440, 900, '3x3');
     const world = new ChaosWorld(layout.innerRect);
-    world.spawnFromPoses(spawns);
-    world.applyShakeImpulse(11, -6);
+    world.spawnSeatedPoses(spawns);
+    world.applyButtonShakeBurst(11, -6);
     world.step(16.67);
+    const pickedId = world.getBodyPoses().keys().next().value!;
+    const picked = spawns.find((s) => s.bookId === pickedId)!;
 
     world.openDoorAndSpill(1440, 900, layout.frameRect, layout.isDesktop);
     for (let f = 0; f < 66; f += 1) {
       world.step(16.67);
     }
 
-    const picked = spawns[0];
     world.removeBody(picked.bookId);
     world.addDroppedBody(
       {
@@ -314,34 +318,47 @@ describe('ChaosWorld direct grab non-inertial shaking & progressive dislodge', (
       angleRad: 0,
     };
 
+    const spawnDislodgedAtCenter = () => {
+      const w = new ChaosWorld(layout.innerRect);
+      w.spawnSeatedPoses([centerBook]);
+      for (let f = 0; f < 20 && w.getDislodgedCount() === 0; f += 1) {
+        w.applyFrameShakeMotion(0, -12000, 0, -600, 0, 1 / 60);
+        w.step(16.67);
+      }
+      for (let f = 0; f < 45; f += 1) {
+        w.applyFrameShakeMotion(0, 0, 0, 0, 0, 1 / 60);
+        w.step(16.67);
+      }
+      expect(w.getDislodgedCount()).toBe(1);
+      return w;
+    };
+
     // 1. +x 가속 시 -x 관성력 확인
-    const worldInertial = new ChaosWorld(layout.innerRect);
-    worldInertial.spawnFromPoses([centerBook]);
-    const startX = worldInertial.getBodyPoses().get(centerBook.bookId)!.x;
+    const worldInertial = spawnDislodgedAtCenter();
+    const startXInertial = worldInertial.getBodyPoses().get(centerBook.bookId)!.x;
     for (let f = 0; f < 10; f += 1) {
       worldInertial.applyFrameShakeMotion(15000, 0, 0, 0, 0, 1 / 60);
       worldInertial.step(16.67);
     }
     const endXInertial = worldInertial.getBodyPoses().get(centerBook.bookId)!.x;
-    expect(endXInertial).toBeLessThan(startX);
+    expect(endXInertial).toBeLessThan(startXInertial);
     worldInertial.dispose();
 
     // 2. +기울기 적용 시 +x 중력 성분 확인
-    const worldTilt = new ChaosWorld(layout.innerRect);
-    worldTilt.spawnFromPoses([centerBook]);
+    const worldTilt = spawnDislodgedAtCenter();
+    const startXTilt = worldTilt.getBodyPoses().get(centerBook.bookId)!.x;
     for (let f = 0; f < 15; f += 1) {
       worldTilt.applyFrameShakeMotion(0, 0, 0, 0, 0.12, 1 / 60);
       worldTilt.step(16.67);
     }
     const endXTilt = worldTilt.getBodyPoses().get(centerBook.bookId)!.x;
-    expect(endXTilt).toBeGreaterThan(startX);
+    expect(endXTilt).toBeGreaterThan(startXTilt);
     worldTilt.dispose();
   });
 
-  it('spills only dislodged subset on partial openDoorAndSpill and releases all on releaseAllSeatedBodies', () => {
+  it('spills only dislodged subset on partial openDoorAndSpill', () => {
     const { volume, layout, spawns } = createSpawnList(1440, 900, '3x3');
 
-    // 부분 이탈 후 문 열기
     const partialWorld = new ChaosWorld(layout.innerRect);
     partialWorld.spawnSeatedPoses(spawns);
     for (let f = 0; f < 8; f += 1) {
@@ -367,16 +384,6 @@ describe('ChaosWorld direct grab non-inertial shaking & progressive dislodge', (
       expect(p.y).toBeLessThanOrEqual(900 - 72);
     }
     partialWorld.dispose();
-
-    // 일괄 해제 검증
-    const fullWorld = new ChaosWorld(layout.innerRect);
-    fullWorld.spawnSeatedPoses(spawns);
-    expect(fullWorld.getSeatedCount()).toBe(volume.books.length);
-    expect(fullWorld.getDislodgedCount()).toBe(0);
-    fullWorld.releaseAllSeatedBodies();
-    expect(fullWorld.getSeatedCount()).toBe(0);
-    expect(fullWorld.getDislodgedCount()).toBe(volume.books.length);
-    fullWorld.dispose();
   });
 });
 

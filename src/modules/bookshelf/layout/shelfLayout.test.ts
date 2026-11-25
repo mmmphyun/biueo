@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultVolume } from '../../data/defaultBooks';
+import { createDefaultVolume } from '../data/defaultBooks';
 import { computeDeskSpillTargets, computeShelfLayout } from './shelfLayout';
 
 describe('computeShelfLayout responsive geometry & 5x3 transpose', () => {

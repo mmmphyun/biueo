@@ -3,8 +3,8 @@ import {
   BOOK_THICKNESS_RATIOS,
   COMPARTMENT_SIDE_MARGIN,
   COMPARTMENT_USABLE_WIDTH,
-} from '../../data/palette';
-import type { BookModel } from '../../types/contracts';
+} from '../data/bookPalette';
+import type { BookModel } from '../../../types/contracts';
 import {
   computeBookDimensions,
   computeBookSlotNormX,
@@ -20,7 +20,6 @@ import {
   type Rect,
   type ShelfLayoutGeometry,
 } from '../layout/shelfLayout';
-import type { ChaosBodyPose } from './chaosWorld';
 
 export const TOUCH_MAGNET_RADIUS_PX = 28;
 export const TOUCH_LIFT_OFFSET_Y_PX = -48;
@@ -544,48 +543,6 @@ export function buildNeatPoses(
         targetScale: 1,
       });
     }
-  }
-
-  return poses;
-}
-
-export function enterOpenFromChaos(
-  books: BookModel[],
-  chaosPoses: ReadonlyMap<string, ChaosBodyPose>,
-  layout: ShelfLayoutGeometry
-): Map<string, KinematicBookPose> {
-  for (const book of books) {
-    book.placement = null;
-  }
-  const spillTargets = computeDeskSpillTargets(books, layout);
-  const refComp = layout.compartments[0];
-  const poses = new Map<string, KinematicBookPose>();
-
-  for (const book of books) {
-    const dims = computeBookDimensions(book, refComp);
-    const start = chaosPoses.get(book.id);
-    const target = spillTargets.get(book.id);
-
-    const sx = start?.x ?? layout.innerRect.x + layout.innerRect.w * 0.5;
-    const sy = start?.y ?? layout.innerRect.y + layout.innerRect.h * 0.7;
-    const sa = start?.angle ?? 0;
-    const tx = target?.centerX ?? sx;
-    const ty = target?.centerY ?? sy;
-    const ta = target?.angleRad ?? 0;
-
-    poses.set(book.id, {
-      bookId: book.id,
-      x: sx,
-      y: sy,
-      angle: sa,
-      scale: 1,
-      widthPx: dims.widthPx,
-      heightPx: dims.heightPx,
-      targetX: tx,
-      targetY: ty,
-      targetAngle: ta,
-      targetScale: 1,
-    });
   }
 
   return poses;

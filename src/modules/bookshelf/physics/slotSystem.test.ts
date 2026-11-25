@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultVolume } from '../../data/defaultBooks';
-import type { BookModel } from '../../types/contracts';
+import { createDefaultVolume } from '../data/defaultBooks';
+import type { BookModel } from '../../../types/contracts';
 import {
   computeBookSlotRects,
   computeCompartmentBookPoses,
@@ -11,7 +11,6 @@ import {
   canCompartmentFit,
   commitBookPlacement,
   computeInsertionPreview,
-  enterOpenFromChaos,
   getEffectiveDragCenter,
   isShortTap,
   pickBookAtPoint,
@@ -79,7 +78,7 @@ describe('SlotSystem kinematics, capacity, and touch ergonomics', () => {
     expect(isShortTap(100, 100, 101, 101, 220)).toBe(false);
   });
 
-  it('separates door-open transitions: chaos clears placements to desk, neat keeps placements', () => {
+  it('preserves placement metadata cleanly when building neat poses and updating compartment placement', () => {
     const volume = createDefaultVolume(1, '3x3');
     const layout = computeShelfLayout(1440, 900, 3, 3);
 
@@ -87,15 +86,8 @@ describe('SlotSystem kinematics, capacity, and touch ergonomics', () => {
     expect(neatPoses.size).toBe(36);
     expect(volume.books.every((b) => b.placement !== null)).toBe(true);
 
-    const chaosMap = new Map(
-      volume.books.map((b) => [
-        b.id,
-        { x: layout.innerRect.x + 200, y: layout.innerRect.y + 400, angle: 0.4 },
-      ])
-    );
-    const openFromChaos = enterOpenFromChaos(volume.books, chaosMap, layout);
-    expect(openFromChaos.size).toBe(36);
-    expect(volume.books.every((b) => b.placement === null)).toBe(true);
+    commitBookPlacement(volume.books, volume.books[0].id, null);
+    expect(volume.books[0].placement).toBeNull();
 
     commitBookPlacement(volume.books, volume.books[0].id, 4, 0);
     expect(volume.books[0].placement).toEqual({ compartmentIndex: 4, orderInCompartment: 0 });

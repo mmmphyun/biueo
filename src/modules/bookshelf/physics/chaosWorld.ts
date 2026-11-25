@@ -4,7 +4,7 @@ import {
   computeTippedBookTransform,
   type Rect,
 } from '../layout/shelfLayout';
-import { mulberry32 } from '../textures/gouachePath';
+import { mulberry32 } from '../../../shared/canvas/gouachePath';
 
 export interface ChaosBodySpawnPose {
   readonly bookId: string;
@@ -239,25 +239,6 @@ export class ChaosWorld {
     return body;
   }
 
-  spawnFromPoses(poses: readonly ChaosBodySpawnPose[]): void {
-    this.clearBodies();
-    this.mode = 'closed_shelf';
-    this.spillElapsedMs = 0;
-    this.dropElapsedMs = 0;
-    this.shelfClearRect = null;
-    this.engine.gravity.x = 0;
-    this.engine.gravity.y = 1.35;
-    const created: Matter.Body[] = [];
-
-    for (const pose of poses) {
-      created.push(this.createClosedBody(pose));
-    }
-
-    if (created.length > 0) {
-      Matter.Composite.add(this.engine.world, created);
-    }
-  }
-
   /**
    * 2.5D 깊이 변수(depthZ)와 종횡비 기반 전도-미끄러짐 경쟁 후보로 책들을 등록한다.
    */
@@ -294,14 +275,6 @@ export class ChaosWorld {
         targetTipAngleAbs: initialAngleAbs,
       });
     }
-  }
-
-  releaseAllSeatedBodies(): void {
-    if (this.seatedById.size === 0) return;
-    for (const [bookId, entry] of this.seatedById) {
-      this.spawnActiveClosedBody(this.resolveSpawnPoseForEntry(bookId, entry));
-    }
-    this.seatedById.clear();
   }
 
   private getUprightRectForEntry(entry: SeatedShelfBook): Rect {
