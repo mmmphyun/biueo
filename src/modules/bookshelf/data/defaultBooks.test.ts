@@ -9,8 +9,8 @@ import {
   RITUAL_PROMPT_POOL,
   RITUAL_PROMPT_TYPES,
   SPINE_MOTIFS,
-} from './palette';
-import { samplePeriodicFbm } from '../engine/textures/paperNoise';
+} from './bookPalette';
+import { samplePeriodicFbm } from '../../../shared/canvas/paperNoise';
 
 describe('createDefaultVolume combinatorial invariants', () => {
   it('constructs 36 books (3x3) with balanced colors, heights, thicknesses, motifs, and prompts', () => {

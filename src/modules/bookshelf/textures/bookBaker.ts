@@ -1,6 +1,6 @@
-import { BOOK_COLORS } from '../../data/palette';
-import type { BookModel, SpineMotif, VisualTuningParams } from '../../types/contracts';
-import { fillGouacheShape, mulberry32, traceOrganicRect } from './gouachePath';
+import { BOOK_COLORS } from '../data/bookPalette';
+import type { BookModel, SpineMotif, VisualTuningParams } from '../../../types/contracts';
+import { fillGouacheShape, mulberry32, traceOrganicRect } from '../../../shared/canvas/gouachePath';
 
 export interface BakedBookSprite {
   readonly bookId: string;

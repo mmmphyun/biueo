@@ -3,12 +3,13 @@ import type {
   BookHeightTier,
   BookModel,
   BookThicknessTier,
+  DeskThemeId,
   RitualNote,
   ShelfGridPreset,
   ShelfVolume,
   UserPreferences,
   VisualTuningParams,
-} from '../types/contracts';
+} from '../../../types/contracts';
 import {
   BOOK_COLOR_IDS,
   BOOK_COLORS,
@@ -19,7 +20,7 @@ import {
   getBookRitualPrompt,
   RITUAL_PROMPT_TYPES,
   SPINE_MOTIFS,
-} from './palette';
+} from './bookPalette';
 
 export const DEFAULT_TUNING: VisualTuningParams = {
   grainStrength: 0.32,
@@ -169,10 +170,13 @@ export function createDefaultVolume(
   };
 }
 
-export function createDefaultPreferences(activeVolumeId = 'vol-1-3x3'): UserPreferences {
+export function createDefaultPreferences(
+  activeVolumeId = 'vol-1-3x3',
+  theme: DeskThemeId = 'sage'
+): UserPreferences {
   return {
     id: 'singleton',
-    theme: 'sage',
+    theme,
     activeVolumeId,
     lastActiveModuleId: 'bookshelf',
     openRandomOnVisit: false,

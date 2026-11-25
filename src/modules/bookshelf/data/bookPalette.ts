@@ -2,82 +2,9 @@ import type {
   BookColorId,
   BookHeightTier,
   BookThicknessTier,
-  DeskThemeId,
   RitualPromptType,
   SpineMotif,
-} from '../types/contracts';
-
-export interface DeskThemeTokens {
-  readonly id: DeskThemeId;
-  readonly labelKo: string;
-  readonly bg: string;
-  readonly shadow: string;
-  /** 배경 데스크 위에 바로 얹는 UI 텍스트용 고대비 잉크 */
-  readonly ink: string;
-  readonly dockSurface: string;
-  readonly dockInk: string;
-  readonly dockMuted: string;
-  readonly dockBorder: string;
-  readonly isDarkDesk: boolean;
-}
-
-export const DESK_THEMES: Record<DeskThemeId, DeskThemeTokens> = {
-  sage: {
-    id: 'sage',
-    labelKo: '세이지',
-    bg: '#C7E1B6',
-    shadow: '#A6C395',
-    ink: '#243025',
-    dockSurface: '#F7F4EC',
-    dockInk: '#253126',
-    dockMuted: '#4A594B',
-    dockBorder: '#849A7A',
-    isDarkDesk: false,
-  },
-  slate: {
-    id: 'slate',
-    labelKo: '슬레이트',
-    bg: '#8F9FA9',
-    shadow: '#71828D',
-    ink: '#1A2328',
-    dockSurface: '#F6F5F1',
-    dockInk: '#1F2930',
-    dockMuted: '#46545D',
-    dockBorder: '#697B86',
-    isDarkDesk: false,
-  },
-  lavender: {
-    id: 'lavender',
-    labelKo: '라벤더',
-    bg: '#7E7E9A',
-    shadow: '#63637E',
-    ink: '#171726',
-    dockSurface: '#F6F4F7',
-    dockInk: '#202033',
-    dockMuted: '#484863',
-    dockBorder: '#676784',
-    isDarkDesk: false,
-  },
-  charcoal: {
-    id: 'charcoal',
-    labelKo: '차콜',
-    bg: '#323C42',
-    shadow: '#21282D',
-    ink: '#EEF0EC',
-    dockSurface: '#262E33',
-    dockInk: '#F0F2EE',
-    dockMuted: '#C4CBC7',
-    dockBorder: '#6D7A82',
-    isDarkDesk: true,
-  },
-};
-
-export const DESK_THEME_ORDER: readonly DeskThemeId[] = [
-  'sage',
-  'slate',
-  'lavender',
-  'charcoal',
-];
+} from '../../../types/contracts';
 
 export const SHELF_WOOD_COLORS = {
   frame: '#E5D2B5',
@@ -308,13 +235,6 @@ export const RITUAL_PROMPT_POOL: Record<RitualPromptType, readonly RitualPromptE
       placeholder: '짧은 인사나 도움 하나만 떠올려 볼까요.',
     },
   ],
-};
-
-export const RITUAL_PROMPTS: Record<RitualPromptType, RitualPromptEntry> = {
-  strength_recall: RITUAL_PROMPT_POOL.strength_recall[0],
-  future_action: RITUAL_PROMPT_POOL.future_action[0],
-  self_compassion: RITUAL_PROMPT_POOL.self_compassion[0],
-  gratitude: RITUAL_PROMPT_POOL.gratitude[0],
 };
 
 export function getBookRitualPrompt(book: {

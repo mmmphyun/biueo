@@ -1,7 +1,7 @@
-import { SHELF_WOOD_COLORS } from '../../data/palette';
-import type { VisualTuningParams } from '../../types/contracts';
+import { SHELF_WOOD_COLORS } from '../data/bookPalette';
+import type { VisualTuningParams } from '../../../types/contracts';
 import type { ShelfLayoutGeometry } from '../layout/shelfLayout';
-import { fillGouacheShape, mulberry32, traceOrganicRect } from './gouachePath';
+import { fillGouacheShape, mulberry32, traceOrganicRect } from '../../../shared/canvas/gouachePath';
 
 export interface BakedShelfSprites {
   readonly shelfBodyCanvas: HTMLCanvasElement;
