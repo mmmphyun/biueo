@@ -1,26 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --in-oklab: ;
-  --font-sans-ui: 'Pretendard Variable', 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
-  --font-serif-book: 'Gowun Batang', 'Batang', serif;
-  --spring-easing: linear(
-    0, 0.016 0.5%, 0.06 1%, 0.226 2%, 1.116 5.4%, 1.375 6.6%,
-    1.527 7.7%, 1.565 8.2%, 1.585 8.8%, 1.581 9.3%, 1.559 9.8%,
-    1.458 10.9%, 0.937 14.3%, 0.784 15.5%, 0.693 16.6%, 0.67 17.1%,
-    0.657 17.7%, 0.671 18.7%, 0.729 19.8%, 1.042 23.3%, 1.13 24.5%,
-    1.182 25.6%, 1.201 26.7%, 1.192 27.7%, 1.156 28.8%, 0.977 32.2%,
-    0.925 33.4%, 0.894 34.5%, 0.882 35.6%, 0.887 36.6%, 0.907 37.7%,
-    1.045 42.4%, 1.069 44.5%, 1.059 46.3%, 0.979 50.9%, 0.96 53.4%,
-    0.966 55.3%, 1.013 59.9%, 1.024 62.3%, 0.986 71.2%, 1.008 79.9%,
-    0.995 88.9%, 1
-  );
-}
-
-@supports (background: linear-gradient(in oklab, white, black)) {
-  :root {
-    --in-oklab: in oklab;
-  }
+  --font-sans-ui: 'IBM Plex Sans KR', 'Pretendard Variable', 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
 }
 
 html,
@@ -44,23 +25,25 @@ body,
   contain-intrinsic-size: auto 100vw auto 100dvh;
 }
 
-.font-book-serif {
-  font-family: var(--font-serif-book);
+.desk-ink-action {
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
-.hud-surface {
-  background: linear-gradient(
-    to bottom var(--in-oklab),
-    var(--dock-surface, #f7f3eb),
-    color-mix(in oklab, var(--dock-surface, #f7f3eb) 93%, var(--dock-ink, #253126))
-  );
-  transition: transform 0.48s ease-out, opacity 0.24s ease-out;
+.desk-ink-action:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
 }
 
-@supports (transition-timing-function: linear(0, 1)) {
-  .hud-surface {
-    transition: transform 0.56s var(--spring-easing), opacity 0.24s ease-out;
-  }
+.paper-sheet-dialog {
+  border: 0;
+  border-radius: 10px;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 6px 8px 0 color-mix(in oklab, var(--sheet-shadow, #181c1a) 68%, #101412);
 }
 
 /* Modern Web Guidance (dialog): ::backdrop에 overflow: hidden과 overscroll-behavior: contain 동시 지정 */
@@ -72,12 +55,12 @@ dialog:modal {
 dialog::backdrop {
   overflow: hidden;
   overscroll-behavior: contain;
-  background-color: rgba(24, 28, 32, 0.42);
+  background-color: rgba(20, 24, 22, 0.36);
   backdrop-filter: blur(2px);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hud-surface {
+  .desk-ink-action {
     transition: none;
   }
 }

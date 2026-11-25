@@ -33,88 +33,40 @@ export function MinimalHud({
   onOpenHelp,
 }: MinimalHudProps) {
   const theme = DESK_THEMES[themeId];
-  const surfaceStyle = {
-    '--dock-surface': theme.dockSurface,
-    '--dock-ink': theme.dockInk,
-    color: theme.dockInk,
-    borderColor: theme.dockBorder,
-  } as React.CSSProperties;
-
   const isAllShelved = snapshot.shelvedCount === snapshot.totalCount;
 
   return (
     <>
-      {/* 우상단 상시 도움말 ? 버튼 */}
-      <button
-        type="button"
-        onClick={onOpenHelp}
-        aria-label="도움말 및 뇌과학 원리"
-        style={surfaceStyle}
-        className="hud-surface fixed top-3 right-3 z-20 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border text-sm font-bold shadow-sm hover:opacity-90 sm:top-5 sm:right-6"
+      {/* 우상단 데스크 직인쇄 유틸리티 (크기 · 바탕 물감 점 · 도움말) */}
+      <div
+        role="region"
+        aria-label="서가 설정 및 안내"
+        style={{ color: theme.ink }}
+        className="fixed top-2.5 right-3 z-20 flex items-center gap-2 sm:top-4 sm:right-6 sm:gap-4"
       >
-        ?
-      </button>
-
-      {/* 하단 중앙 최소 물리·테마 컨트롤 바 */}
-      <nav
-        aria-label="책장 조작 도구"
-        style={surfaceStyle}
-        className="hud-surface fixed bottom-3 left-1/2 z-20 flex w-max max-w-[calc(100vw-20px)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-2xl border px-2.5 py-1.5 shadow-sm sm:bottom-5 sm:gap-2 sm:px-3 sm:py-2"
-      >
-        {!snapshot.isDoorOpen ? (
-          <>
-            <button
-              type="button"
-              onClick={onShake}
-              style={{
-                borderColor: theme.dockBorder,
-                backgroundColor: theme.bg,
-                color: theme.ink,
-              }}
-              className="cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-semibold hover:opacity-90"
-            >
-              흔들기
-            </button>
-            <button
-              type="button"
-              onClick={onToggleDoor}
-              style={{ borderColor: theme.dockBorder }}
-              className="cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-medium hover:opacity-80"
-            >
-              문 열기
-            </button>
-          </>
-        ) : (
+        {motionSupported && (
           <button
             type="button"
-            onClick={onToggleDoor}
-            style={{
-              borderColor: isAllShelved ? theme.dockInk : theme.dockBorder,
-              backgroundColor: isAllShelved ? theme.bg : 'transparent',
-              color: isAllShelved ? theme.ink : theme.dockInk,
-            }}
-            className="cursor-pointer rounded-xl border px-3 py-1.5 text-xs font-semibold hover:opacity-90"
+            aria-pressed={motionShakeEnabled}
+            onClick={onToggleMotionShake}
+            className="desk-ink-action flex min-h-8 items-center gap-1.5 px-1 text-[11px] font-medium opacity-75 hover:opacity-100 sm:text-xs"
           >
-            걸쇠 잠그기
-            {!isAllShelved && (
-              <span className="ml-1.5 text-[11px] font-normal opacity-75">
-                {snapshot.shelvedCount}/{snapshot.totalCount}
-              </span>
+            {motionShakeEnabled && (
+              <span
+                aria-hidden="true"
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: theme.ink }}
+              />
             )}
+            <span>폰 흔들기</span>
           </button>
         )}
 
-        <span
-          aria-hidden="true"
-          className="mx-0.5 hidden h-4 w-px opacity-30 sm:inline-block"
-          style={{ backgroundColor: theme.dockInk }}
-        />
-
-        {/* 3x3 / 5x3 프리셋 전환 */}
+        {/* 3x3 / 5x3 크기 선택 */}
         <div
           role="group"
           aria-label="책장 크기 선택"
-          className="flex items-center gap-1"
+          className="flex items-center gap-1.5 sm:gap-2.5"
         >
           {(['3x3', '5x3'] as const).map((preset) => {
             const active = gridPreset === preset;
@@ -124,12 +76,10 @@ export function MinimalHud({
                 type="button"
                 aria-pressed={active}
                 onClick={() => onChangePreset(preset)}
-                style={{
-                  borderColor: active ? theme.dockInk : theme.dockBorder,
-                  backgroundColor: active ? theme.bg : 'transparent',
-                  color: active ? theme.ink : theme.dockInk,
-                }}
-                className="cursor-pointer rounded-lg border px-2 py-1 text-[11px] font-semibold"
+                style={{ borderColor: active ? theme.ink : 'transparent' }}
+                className={`desk-ink-action min-h-8 border-b-[1.5px] px-0.5 text-xs tracking-tight sm:text-[13px] ${
+                  active ? 'font-semibold opacity-100' : 'font-normal opacity-50 hover:opacity-85'
+                }`}
               >
                 {preset === '3x3' ? '3×3' : '5×3'}
               </button>
@@ -137,11 +87,11 @@ export function MinimalHud({
           })}
         </div>
 
-        {/* 바탕 테마 4종 스와치 */}
+        {/* 데스크 바탕 4색 무외곽선 물감 점 */}
         <div
           role="group"
           aria-label="데스크 바탕 색상"
-          className="flex items-center gap-1"
+          className="flex items-center gap-0.5 sm:gap-1"
         >
           {DESK_THEME_ORDER.map((id) => {
             const t = DESK_THEMES[id];
@@ -153,36 +103,80 @@ export function MinimalHud({
                 aria-label={`${t.labelKo} 바탕`}
                 aria-pressed={active}
                 onClick={() => onChangeTheme(id)}
-                style={{
-                  backgroundColor: t.bg,
-                  borderColor: active ? theme.dockInk : theme.dockBorder,
-                }}
-                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border text-[10px] font-bold"
+                className="desk-ink-action relative flex h-7 w-7 items-center justify-center sm:h-8 sm:w-8"
               >
-                {active ? (
-                  <span aria-hidden="true" style={{ color: t.ink }}>
-                    ✓
-                  </span>
-                ) : null}
+                <span
+                  aria-hidden="true"
+                  className="block h-3.5 w-3.5 rounded-full transition-transform sm:h-4 sm:w-4"
+                  style={{
+                    backgroundColor: t.bg,
+                    transform: active ? 'scale(1.08)' : undefined,
+                    boxShadow: active
+                      ? `inset 0 0 0 1.5px ${t.ink}55, 1.5px 2px 0 ${theme.shadow}`
+                      : `1.5px 2px 0 ${theme.shadow}`,
+                  }}
+                />
+                {active && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute bottom-0.5 left-1/2 h-[3px] w-[3px] -translate-x-1/2 rounded-full"
+                    style={{ backgroundColor: theme.ink }}
+                  />
+                )}
               </button>
             );
           })}
         </div>
 
-        {/* 모바일 전용 가속도계 흔들기 권한 토글 */}
-        {motionSupported && (
+        <button
+          type="button"
+          onClick={onOpenHelp}
+          aria-label="도움말 및 뇌과학 원리"
+          className="desk-ink-action flex h-8 w-8 items-center justify-center text-sm font-semibold opacity-65 hover:opacity-100"
+        >
+          ?
+        </button>
+      </div>
+
+      {/* 하단 중앙 주 행동 단독 배치 */}
+      <nav
+        aria-label="책장 주 조작"
+        style={{ color: theme.ink }}
+        className="fixed bottom-3.5 left-1/2 z-20 flex w-max -translate-x-1/2 items-center gap-7 sm:bottom-5 sm:gap-8"
+      >
+        {!snapshot.isDoorOpen ? (
+          <>
+            <button
+              type="button"
+              onClick={onShake}
+              style={{ borderColor: theme.ink }}
+              className="desk-ink-action min-h-9 border-b-[1.5px] px-0.5 pb-0.5 text-[13px] font-semibold tracking-[-0.01em] hover:opacity-75 sm:text-sm"
+            >
+              흔들기
+            </button>
+            <button
+              type="button"
+              onClick={onToggleDoor}
+              className="desk-ink-action min-h-9 px-0.5 pb-0.5 text-[13px] font-medium tracking-[-0.01em] opacity-70 hover:opacity-100 sm:text-sm"
+            >
+              문 열기
+            </button>
+          </>
+        ) : (
           <button
             type="button"
-            aria-pressed={motionShakeEnabled}
-            onClick={onToggleMotionShake}
-            style={{
-              borderColor: motionShakeEnabled ? theme.dockInk : theme.dockBorder,
-              backgroundColor: motionShakeEnabled ? theme.bg : 'transparent',
-              color: motionShakeEnabled ? theme.ink : theme.dockInk,
-            }}
-            className="cursor-pointer rounded-xl border px-2.5 py-1 text-[11px] font-medium"
+            onClick={onToggleDoor}
+            style={{ borderColor: isAllShelved ? theme.ink : 'transparent' }}
+            className={`desk-ink-action flex min-h-9 items-baseline gap-2 border-b-[1.5px] px-0.5 pb-0.5 text-[13px] tracking-[-0.01em] sm:text-sm ${
+              isAllShelved ? 'font-semibold opacity-100' : 'font-medium opacity-78 hover:opacity-100'
+            }`}
           >
-            {motionShakeEnabled ? '✓ 폰 흔들기' : '폰 흔들기'}
+            <span>걸쇠 잠그기</span>
+            {!isAllShelved && (
+              <span className="text-xs font-normal tabular-nums opacity-65">
+                {snapshot.shelvedCount}/{snapshot.totalCount}
+              </span>
+            )}
           </button>
         )}
       </nav>

@@ -145,10 +145,10 @@ export default function App() {
       />
 
       <header
-        className="pointer-events-none fixed top-3 left-4 z-10 sm:top-5 sm:left-6"
+        className="pointer-events-none fixed top-3.5 left-4 z-10 sm:top-5 sm:left-6"
         style={{ color: theme.ink }}
       >
-        <h1 className="font-book-serif text-xl font-bold tracking-tight sm:text-2xl">
+        <h1 className="text-[17px] font-semibold tracking-[-0.03em] opacity-90 sm:text-[19px]">
           비우어
         </h1>
       </header>
