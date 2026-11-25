@@ -1,4 +1,14 @@
-export type DeskThemeId = 'sage' | 'slate' | 'lavender' | 'charcoal';
+export type DeskColorMode = 'light' | 'dark';
+
+export type DeskThemeId =
+  | 'sage'
+  | 'slate'
+  | 'lavender'
+  | 'mist'
+  | 'charcoal'
+  | 'pine'
+  | 'dusk'
+  | 'umber';
 
 export type ShelfGridPreset = '3x3' | '5x3';
 
@@ -145,7 +155,6 @@ export interface ShelfEngineController {
   loadVolume(volume: ShelfVolume): void;
   updateBookNote(bookId: string, note: RitualNote | null): void;
   setTheme(theme: DeskThemeId): void;
-  setTuning(tuning: VisualTuningParams): void;
   setAudioEnabled(enabled: boolean): void;
   setMotionShakeEnabled(enabled: boolean): void;
   triggerShake(intensity?: number): void;
