@@ -14,6 +14,8 @@ interface PaperDialogProps {
   readonly maxWidthClass?: string;
   readonly minHeightClass?: string;
   readonly titleClassName?: string;
+  readonly autoFocusClose?: boolean;
+  readonly bodyClassName?: string;
   readonly onClose: () => void;
   readonly children: ReactNode;
 }
@@ -28,7 +30,9 @@ export function PaperDialog({
   accentBarHex,
   maxWidthClass = 'max-w-md',
   minHeightClass = '',
-  titleClassName = 'mt-4 text-base font-semibold leading-relaxed tracking-[-0.02em] sm:text-[17px]',
+  titleClassName = 'mt-3 text-[17px] font-semibold leading-relaxed tracking-[-0.02em] sm:text-lg',
+  autoFocusClose = true,
+  bodyClassName = '',
   onClose,
   children,
 }: PaperDialogProps) {
@@ -49,9 +53,9 @@ export function PaperDialog({
           '--sheet-shadow': theme.shadow,
         } as React.CSSProperties
       }
-      className={`paper-sheet-dialog w-[calc(100vw-32px)] ${maxWidthClass}`}
+      className={`paper-sheet-dialog max-h-[86dvh] w-[calc(100vw-32px)] ${maxWidthClass}`}
     >
-      <div className={`flex ${minHeightClass}`}>
+      <div className={`flex max-h-[86dvh] ${minHeightClass}`}>
         {accentBarHex && (
           <div
             aria-hidden="true"
@@ -60,24 +64,24 @@ export function PaperDialog({
           />
         )}
 
-        <div className="flex flex-1 flex-col justify-between px-6 py-6 sm:px-7 sm:py-7">
-          <div>
+        <div className="flex min-h-0 flex-1 flex-col justify-between px-5 py-5 sm:px-7 sm:py-6">
+          <div className="shrink-0">
             <div className="flex items-start justify-between gap-4">
               {headerLabel ? (
-                <span className="text-xs font-medium" style={{ color: theme.dockMuted }}>
+                <span className="text-sm font-medium" style={{ color: theme.dockMuted }}>
                   {headerLabel}
                 </span>
               ) : (
                 <div>
                   <h1
                     id={titleId}
-                    className="text-base font-semibold tracking-[-0.02em] sm:text-lg"
+                    className="text-[17px] font-semibold tracking-[-0.02em] sm:text-lg"
                   >
                     {title}
                   </h1>
                   {subtitle && (
                     <p
-                      className="mt-1 text-xs leading-relaxed"
+                      className="mt-1 text-sm leading-relaxed"
                       style={{ color: theme.dockMuted }}
                     >
                       {subtitle}
@@ -88,9 +92,10 @@ export function PaperDialog({
 
               <button
                 type="button"
-                autoFocus
+                autoFocus={autoFocusClose}
                 onClick={() => dialogRef.current?.close()}
-                className="desk-ink-action shrink-0 text-xs font-medium opacity-60 hover:opacity-100"
+                style={{ color: theme.dockMuted }}
+                className="desk-ink-action min-h-9 shrink-0 px-2 text-sm font-medium hover:underline"
               >
                 닫기
               </button>
@@ -103,7 +108,7 @@ export function PaperDialog({
             )}
           </div>
 
-          {children}
+          <div className={`min-h-0 flex-1 overflow-y-auto ${bodyClassName}`}>{children}</div>
         </div>
       </div>
     </dialog>

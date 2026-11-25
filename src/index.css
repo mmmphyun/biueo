@@ -29,14 +29,74 @@ body,
 .desk-ink-action {
   background: transparent;
   border: 0;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition: opacity 0.18s ease, transform 0.18s ease, color 0.18s ease;
 }
 
-.desk-ink-action:focus-visible {
+.desk-ink-action:focus-visible,
+.biueo-btn:focus-visible,
+.biueo-tab:focus-visible,
+.biueo-link:focus-visible {
   outline: 2px solid currentColor;
-  outline-offset: 4px;
+  outline-offset: 3px;
+}
+
+.biueo-btn {
+  min-height: 40px;
+  font-size: 0.875rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.14s ease, background-color 0.14s ease, color 0.14s ease;
+}
+
+.biueo-tabs-scroll {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: inline proximity;
+}
+
+.biueo-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.biueo-tab {
+  position: relative;
+  flex: none;
+  min-height: 40px;
+  padding: 0 2px;
+  background: transparent;
+  border: 0;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: color 0.15s ease;
+}
+
+/* WCAG 1.4.1 및 강제 색상 모드 안전을 위해 box-shadow/배경 대신 border-block-end로 선택 탭을 표시한다. */
+.biueo-tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  border-block-end: 2.5px solid currentColor;
+}
+
+.biueo-note-textarea {
+  width: 100%;
+  font-size: 1rem;
+  line-height: 1.65;
+  field-sizing: content;
+  height: auto;
+  min-block-size: 4lh;
+  max-block-size: 9lh;
+  resize: none;
+}
+
+.biueo-note-textarea:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 .paper-sheet-dialog {
@@ -61,7 +121,9 @@ dialog::backdrop {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .desk-ink-action {
+  .desk-ink-action,
+  .biueo-btn,
+  .biueo-tab {
     transition: none;
   }
 }
@@ -70,6 +132,10 @@ dialog::backdrop {
   .paper-sheet-dialog {
     border: 1px solid CanvasText;
     box-shadow: none;
+  }
+
+  .biueo-btn {
+    border: 1px solid ButtonText;
   }
 
   .desk-paint-dab {

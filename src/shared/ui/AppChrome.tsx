@@ -34,7 +34,7 @@ export function AppChrome({
         className="pointer-events-none fixed top-3.5 left-4 z-10 sm:top-5 sm:left-6"
         style={{ color: theme.ink }}
       >
-        <h1 className="text-[17px] font-semibold tracking-[-0.03em] opacity-90 sm:text-[19px]">
+        <h1 className="text-[18px] font-semibold tracking-[-0.03em] sm:text-[19px]">
           비우어
         </h1>
       </header>
@@ -43,7 +43,7 @@ export function AppChrome({
         role="region"
         aria-label="화면 설정 및 안내"
         style={{ color: theme.ink }}
-        className="fixed top-2.5 right-3 z-20 flex items-center gap-2.5 sm:top-4 sm:right-6 sm:gap-4"
+        className="fixed top-2.5 right-3 z-20 flex items-center gap-1.5 sm:top-4 sm:right-6 sm:gap-3"
       >
         {headerSlot}
 
@@ -53,12 +53,13 @@ export function AppChrome({
           aria-pressed={audioEnabled}
           aria-label={audioEnabled ? '소리 끄기' : '소리 켜기'}
           title={audioEnabled ? '소리 켜짐 · 눌러서 음소거' : '소리 꺼짐 · 눌러서 소리 켜기'}
-          className="desk-ink-action flex h-8 w-8 items-center justify-center opacity-68 hover:opacity-100"
+          style={{ color: audioEnabled ? theme.ink : theme.inkMuted }}
+          className="desk-ink-action flex h-9 w-9 items-center justify-center"
         >
           <svg
             aria-hidden="true"
-            width="16"
-            height="16"
+            width="17"
+            height="17"
             viewBox="0 0 16 16"
             fill="none"
             stroke="currentColor"
@@ -82,7 +83,8 @@ export function AppChrome({
           type="button"
           onClick={onToggleColorMode}
           aria-label={colorMode === 'light' ? '다크 모드로 전환' : '라이트 모드로 전환'}
-          className="desk-ink-action min-h-8 px-1 text-xs font-medium opacity-68 hover:opacity-100 sm:text-[13px]"
+          style={{ color: theme.ink }}
+          className="desk-ink-action min-h-9 px-1.5 text-sm font-medium"
         >
           {nextModeLabel}
         </button>
@@ -92,7 +94,7 @@ export function AppChrome({
           onClick={onShuffleTheme}
           aria-label="바탕 색 바꾸기"
           title={`${theme.labelKo} · 눌러서 색 바꾸기`}
-          className="desk-ink-action flex h-8 w-8 items-center justify-center"
+          className="desk-ink-action flex h-9 w-9 items-center justify-center"
         >
           <span
             aria-hidden="true"
@@ -107,8 +109,9 @@ export function AppChrome({
         <button
           type="button"
           onClick={onOpenHelp}
-          aria-label="도움말 및 뇌과학 원리"
-          className="desk-ink-action flex h-8 w-8 items-center justify-center text-sm font-semibold opacity-65 hover:opacity-100"
+          aria-label="비우어 안내와 데이터 관리"
+          style={{ color: theme.ink }}
+          className="desk-ink-action flex h-9 w-9 items-center justify-center text-[15px] font-semibold"
         >
           ?
         </button>
