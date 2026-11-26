@@ -40,6 +40,21 @@ describe('createOrderCelebration', () => {
     expect(rowReduced.totalDurationSec).toBe(0.6);
     expect(rowReduced.sparkles.every((s) => s.driftPx === 0)).toBe(true);
 
+    const mixedRowOrders: DetectedOrder[] = [
+      { kind: 'hue', scope: 'compartment', targetIndices: [0, 1, 2, 4, 7] },
+      { kind: 'hue', scope: 'row', targetIndices: [0] },
+    ];
+    const mixedRowCel = createOrderCelebration(mixedRowOrders, false, 3);
+    expect(mixedRowCel.tier).toBe(2);
+    expect(mixedRowCel.extraCompartmentIndices).toEqual([4, 7]);
+    expect(mixedRowCel.sparkles.filter((s) => s.scope === 'row')).toHaveLength(4);
+    expect(mixedRowCel.sparkles.filter((s) => s.scope === 'compartment')).toHaveLength(6);
+    expect(
+      mixedRowCel.sparkles
+        .filter((s) => s.scope === 'compartment')
+        .map((s) => s.compartmentIndex)
+    ).toEqual([4, 4, 4, 7, 7, 7]);
+
     const shelfOrders: DetectedOrder[] = [
       { kind: 'hue', scope: 'compartment', targetIndices: [0, 1, 2] },
       { kind: 'hue', scope: 'row', targetIndices: [0] },

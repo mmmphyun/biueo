@@ -979,7 +979,8 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
         const tier = getOrderRewardTier(detectedOrders);
         activeCelebration = createOrderCelebration(
           detectedOrders,
-          prefersReducedMotion()
+          prefersReducedMotion(),
+          layout.renderCols
         );
         foley.playOrderReward(tier);
       } else {

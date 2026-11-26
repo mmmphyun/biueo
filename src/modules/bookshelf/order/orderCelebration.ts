@@ -29,6 +29,8 @@ export interface OrderCelebration {
   readonly tier: OrderRewardTier;
   readonly compartmentIndices: readonly number[];
   readonly rowIndices: readonly number[];
+  /** Tier 2 행 스윕 대상 행 밖에 위치한 추가 질서 완료 칸 인덱스 */
+  readonly extraCompartmentIndices: readonly number[];
   readonly sparkles: readonly CelebrationSparkle[];
   elapsedSec: number;
   readonly totalDurationSec: number;
@@ -109,7 +111,8 @@ function drawFourPointStar(
  */
 export function createOrderCelebration(
   orders: readonly DetectedOrder[],
-  reducedMotion: boolean
+  reducedMotion: boolean,
+  gridCols = 3
 ): OrderCelebration {
   const tier = getOrderRewardTier(orders);
   const compList: number[] = [];
@@ -125,6 +128,13 @@ export function createOrderCelebration(
 
   const compartmentIndices = uniqueSorted(compList);
   const rowIndices = uniqueSorted(rowList);
+  const safeGridCols = Math.max(1, gridCols);
+  const extraCompartmentIndices =
+    tier === 2
+      ? compartmentIndices.filter(
+          (compIdx) => !rowIndices.includes(Math.floor(compIdx / safeGridCols))
+        )
+      : [];
 
   let totalDurationSec = 0.45;
   if (tier === 1) totalDurationSec = reducedMotion ? 0.55 : 1.05;
@@ -180,6 +190,24 @@ export function createOrderCelebration(
         });
       }
     }
+    for (const compIdx of extraCompartmentIndices) {
+      for (let i = 0; i < 3; i += 1) {
+        if (sparkles.length >= 36) break;
+        const pt = pickPerimeterPoint(rand);
+        sparkles.push({
+          scope: 'compartment',
+          compartmentIndex: compIdx,
+          u: pt.u,
+          v: pt.v,
+          radiusPx: 4 + rand() * 3,
+          color: PASTEL_SPARKLE_COLORS[Math.floor(rand() * PASTEL_SPARKLE_COLORS.length)],
+          delaySec: reducedMotion ? 0.05 : 0.14 + rand() * 0.28,
+          durationSec: reducedMotion ? 0.45 : 0.54 + rand() * 0.14,
+          driftPx: reducedMotion ? 0 : 4 + rand() * 4,
+          rotationRad: rand() * Math.PI * 0.5,
+        });
+      }
+    }
   } else if (tier === 3) {
     for (let i = 0; i < 16; i += 1) {
       const u = 0.08 + rand() * 0.84;
@@ -204,6 +232,7 @@ export function createOrderCelebration(
     tier,
     compartmentIndices,
     rowIndices,
+    extraCompartmentIndices,
     sparkles,
     elapsedSec: 0,
     totalDurationSec,
@@ -341,11 +370,17 @@ export function drawOrderCelebration(
   const baseBreathPeak = tier === 1 ? 0.18 : 0.16;
   drawCreamBreath(ctx, frameRect, elapsedSec, baseBreathPeak);
 
-  if (tier === 1) {
+  const glowCompIndices =
+    tier === 1
+      ? celebration.compartmentIndices
+      : tier === 2
+        ? celebration.extraCompartmentIndices
+        : [];
+  if (glowCompIndices.length > 0) {
     const pulse = Math.sin((elapsedSec / totalDurationSec) * Math.PI);
-    const edgeAlpha = pulse * 0.24;
+    const edgeAlpha = pulse * (tier === 1 ? 0.24 : 0.2);
     if (edgeAlpha > 0.005) {
-      for (const compIdx of celebration.compartmentIndices) {
+      for (const compIdx of glowCompIndices) {
         const comp = layout.compartments[compIdx];
         if (!comp) continue;
         ctx.save();
