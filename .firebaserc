@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "biueo-mind"
+  },
+  "targets": {
+    "biueo-mind": {
+      "hosting": {
+        "biueo": [
+          "biueo"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
