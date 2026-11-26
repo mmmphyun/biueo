@@ -90,15 +90,15 @@ describe('detectShelfOrders', () => {
     ];
     const asc = [
       makeBook('b0', { colorId: 'coral', heightTier: 2, thicknessTier: 1, motif: 'plain', compartmentIndex: 1, orderInCompartment: 0 }),
-      makeBook('b1', { colorId: 'butter', heightTier: 0, thicknessTier: 0, motif: 'dots', compartmentIndex: 1, orderInCompartment: 1 }),
-      makeBook('b2', { colorId: 'sage', heightTier: 3, thicknessTier: 2, motif: 'wave', compartmentIndex: 1, orderInCompartment: 2 }),
-      makeBook('b3', { colorId: 'slate', heightTier: 1, thicknessTier: 0, motif: 'stitch', compartmentIndex: 1, orderInCompartment: 3 }),
+      makeBook('b1', { colorId: 'salmon', heightTier: 0, thicknessTier: 0, motif: 'dots', compartmentIndex: 1, orderInCompartment: 1 }),
+      makeBook('b2', { colorId: 'butter', heightTier: 3, thicknessTier: 2, motif: 'wave', compartmentIndex: 1, orderInCompartment: 2 }),
+      makeBook('b3', { colorId: 'olive', heightTier: 1, thicknessTier: 0, motif: 'stitch', compartmentIndex: 1, orderInCompartment: 3 }),
     ];
     const desc = [
       makeBook('c0', { colorId: 'charcoal', heightTier: 1, thicknessTier: 0, motif: 'plain', compartmentIndex: 2, orderInCompartment: 0 }),
-      makeBook('c1', { colorId: 'oat', heightTier: 3, thicknessTier: 2, motif: 'dots', compartmentIndex: 2, orderInCompartment: 1 }),
-      makeBook('c2', { colorId: 'olive', heightTier: 0, thicknessTier: 1, motif: 'wave', compartmentIndex: 2, orderInCompartment: 2 }),
-      makeBook('c3', { colorId: 'salmon', heightTier: 2, thicknessTier: 0, motif: 'stitch', compartmentIndex: 2, orderInCompartment: 3 }),
+      makeBook('c1', { colorId: 'cream', heightTier: 3, thicknessTier: 2, motif: 'dots', compartmentIndex: 2, orderInCompartment: 1 }),
+      makeBook('c2', { colorId: 'oat', heightTier: 0, thicknessTier: 1, motif: 'wave', compartmentIndex: 2, orderInCompartment: 2 }),
+      makeBook('c3', { colorId: 'slate', heightTier: 2, thicknessTier: 0, motif: 'stitch', compartmentIndex: 2, orderInCompartment: 3 }),
     ];
     const broken = [
       makeBook('d0', { colorId: 'coral', compartmentIndex: 3, orderInCompartment: 0 }),
@@ -165,6 +165,99 @@ describe('detectShelfOrders', () => {
     expect(orders.some((o) => o.kind === 'thickness' && o.scope === 'compartment' && o.targetIndices.includes(0))).toBe(true);
     expect(orders.some((o) => o.kind === 'motif' && o.scope === 'compartment' && o.targetIndices.includes(0))).toBe(true);
     expect(orders.some((o) => o.kind === 'motif' && o.scope !== 'compartment')).toBe(false);
+  });
+
+  it('rejects jumping hue gaps while recognizing adjacent hue steps and compartment-level grouping across rows and shelf', () => {
+    // 1) 건너뛰는 색 순열(0-2-4-5)은 칸 hue 질서로 인정하지 않음
+    const jumpedComp = [
+      makeBook('j0', { colorId: 'coral', heightTier: 0, thicknessTier: 0, motif: 'plain', compartmentIndex: 0, orderInCompartment: 0 }),
+      makeBook('j1', { colorId: 'butter', heightTier: 3, thicknessTier: 2, motif: 'dots', compartmentIndex: 0, orderInCompartment: 1 }),
+      makeBook('j2', { colorId: 'sage', heightTier: 1, thicknessTier: 1, motif: 'wave', compartmentIndex: 0, orderInCompartment: 2 }),
+      makeBook('j3', { colorId: 'slate', heightTier: 2, thicknessTier: 0, motif: 'stitch', compartmentIndex: 0, orderInCompartment: 3 }),
+      ...fillChaosBooks(32, 1),
+    ];
+    expect(
+      detectShelfOrders(jumpedComp, 3, 3).some((o) => o.kind === 'hue' && o.targetIndices.includes(0))
+    ).toBe(false);
+
+    // 2) olive-sage-oat처럼 각 2권(총 6권, uniform 미충족)이고 4->6 간격이 있는 행은 row hue 질서 미인정
+    const gappedRowBooks = [
+      makeBook('g0', { colorId: 'olive', heightTier: 0, thicknessTier: 0, motif: 'plain', compartmentIndex: 0, orderInCompartment: 0 }),
+      makeBook('g1', { colorId: 'olive', heightTier: 3, thicknessTier: 2, motif: 'dots', compartmentIndex: 0, orderInCompartment: 1 }),
+      makeBook('g2', { colorId: 'sage', heightTier: 1, thicknessTier: 1, motif: 'wave', compartmentIndex: 1, orderInCompartment: 0 }),
+      makeBook('g3', { colorId: 'sage', heightTier: 2, thicknessTier: 0, motif: 'stitch', compartmentIndex: 1, orderInCompartment: 1 }),
+      makeBook('g4', { colorId: 'oat', heightTier: 0, thicknessTier: 2, motif: 'bands', compartmentIndex: 2, orderInCompartment: 0 }),
+      makeBook('g5', { colorId: 'oat', heightTier: 3, thicknessTier: 1, motif: 'diamond', compartmentIndex: 2, orderInCompartment: 1 }),
+      ...fillChaosBooks(24, 3),
+    ];
+    expect(
+      detectShelfOrders(gappedRowBooks, 3, 3).some((o) => o.kind === 'hue' && o.scope === 'row')
+    ).toBe(false);
+
+    // 3) 9칸 모두 1색씩(비단조 색상 배치 포함) 분류된 서가는 row [0,1,2] + shelf Tier 3 hue로 인정
+    const palettePerComp: BookColorId[] = [
+      'olive', 'sage', 'oat',
+      'slate', 'charcoal', 'coral',
+      'salmon', 'cream', 'butter',
+    ];
+    const heightsCycle: BookHeightTier[] = [0, 3, 1, 2];
+    const thickCycle: BookThicknessTier[] = [0, 2, 1, 0];
+    const motifCycle: SpineMotif[] = ['plain', 'dots', 'wave', 'stitch'];
+    const groupedShelfBooks: BookModel[] = [];
+    for (let c = 0; c < 9; c += 1) {
+      for (let i = 0; i < 4; i += 1) {
+        groupedShelfBooks.push(
+          makeBook(`gs_${c}_${i}`, {
+            colorId: palettePerComp[c],
+            heightTier: heightsCycle[(c + i) % heightsCycle.length],
+            thicknessTier: thickCycle[(c + i) % thickCycle.length],
+            motif: motifCycle[(c + i) % motifCycle.length],
+            compartmentIndex: c,
+            orderInCompartment: i,
+          })
+        );
+      }
+    }
+    const shelfOrders = detectShelfOrders(groupedShelfBooks, 3, 3);
+    expect(shelfOrders.find((o) => o.kind === 'hue' && o.scope === 'row')?.targetIndices).toEqual([0, 1, 2]);
+    expect(shelfOrders.some((o) => o.kind === 'hue' && o.scope === 'shelf')).toBe(true);
+    expect(getOrderRewardTier(shelfOrders)).toBe(3);
+
+    // 4) 단일 행(1행: slate, charcoal, coral)만 각 칸 3권 이상 단일 색 분류 시 해당 row Tier 2 인정
+    const singleRowGrouped: BookModel[] = [];
+    const chaosBase = fillChaosBooks(24, 0);
+    for (const b of chaosBase) {
+      if (b.placement && b.placement.compartmentIndex >= 3) {
+        singleRowGrouped.push({
+          ...b,
+          placement: {
+            ...b.placement,
+            compartmentIndex: b.placement.compartmentIndex + 3,
+          },
+        });
+      } else {
+        singleRowGrouped.push(b);
+      }
+    }
+    const row1Colors: BookColorId[] = ['slate', 'charcoal', 'coral'];
+    for (let col = 0; col < 3; col += 1) {
+      for (let i = 0; i < 4; i += 1) {
+        singleRowGrouped.push(
+          makeBook(`sr_${col}_${i}`, {
+            colorId: row1Colors[col],
+            heightTier: heightsCycle[(col + i) % heightsCycle.length],
+            thicknessTier: thickCycle[(col + i) % thickCycle.length],
+            motif: motifCycle[(col + i) % motifCycle.length],
+            compartmentIndex: 3 + col,
+            orderInCompartment: i,
+          })
+        );
+      }
+    }
+    const rowOrders = detectShelfOrders(singleRowGrouped, 3, 3);
+    expect(rowOrders.find((o) => o.kind === 'hue' && o.scope === 'row')?.targetIndices).toEqual([1]);
+    expect(rowOrders.some((o) => o.kind === 'hue' && o.scope === 'shelf')).toBe(false);
+    expect(getOrderRewardTier(rowOrders)).toBe(2);
   });
 
   it('enforces the 3 <= totalWritten < totalBooks guard on written order detection', () => {

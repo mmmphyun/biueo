@@ -276,14 +276,17 @@ export interface ShelfEngineController {
 
 ### 판정 규칙 (책 3권 이상이 꽂힌 칸 기준)
 1. **`hue` (색상 질서)**:
-   - `compartment`: 칸 내 모든 책의 `colorId`가 동일하거나 `colorOrderIndex`가 단조 증가/감소.
-   - `row` / `shelf`: 인접 책 간 `colorOrderIndex`가 비감소(`<=`) 또는 비증가(`>=`) 단조열을 형성.
+   - `compartment`: 칸 내 모든 책의 `colorId`가 동일하거나 인접 색 순서(`|Δ colorOrderIndex| <= 1`)의 단조 증가/감소를 형성.
+   - `row` / `shelf`: 인접 책 간 근접 색 순서(`|Δ colorOrderIndex| <= 1`)의 단조 증가(`<=`)/감소(`>=`)를 형성하거나, 해당 줄/전체 서가의 모든 칸(각 3권 이상)이 각기 단일 색상으로 분류됨.
 2. **`height` (높이 질서)**:
-   - `compartment` / `row` / `shelf`: `heightTier`가 전부 동일, 단조 증가(`<=`), 단조 감소(`>=`), 또는 대칭 아치(증가 후 감소 / 감소 후 증가, 최소 1회 변화 포함).
+   - `compartment`: `heightTier`가 전부 동일, 단조 증가(`<=`), 단조 감소(`>=`), 또는 대칭 아치(증가 후 감소 / 감소 후 증가, 최소 1회 변화 포함).
+   - `row` / `shelf`: 위 단조/아치 열을 형성하거나, 해당 줄/전체 서가의 모든 칸(각 3권 이상)이 각기 단일 높이로 분류됨.
 3. **`thickness` (두께 질서)**:
-   - `compartment` / `row` / `shelf`: `thicknessTier`가 전부 동일, 단조 증가(`<=`), 또는 단조 감소(`>=`).
+   - `compartment`: `thicknessTier`가 전부 동일, 단조 증가(`<=`), 또는 단조 감소(`>=`).
+   - `row` / `shelf`: 위 단조 열을 형성하거나, 해당 줄/전체 서가의 모든 칸(각 3권 이상)이 각기 단일 두께로 분류됨.
 4. **`motif` (무늬 질서)**:
    - `compartment`: 칸 내 모든 책(3권 이상)의 `motif`가 동일.
+   - `row` / `shelf`: 해당 줄/전체 서가의 모든 칸(각 3권 이상)이 각기 단일 무늬로 분류됨.
 5. **`written` (기록 책 모으기)**:
    - `compartment`: 기록된 책이 `3 <= totalWrittenCount < volume.books.length`일 때, 한 칸의 모든 책(3권 이상)이 `note !== null`로만 채워짐. (전권이 기록된 이전 서가에서는 매 배치마다 자동 발동하지 않도록 `written` 판정을 비활성화하고 나머지 4종 질서만 평가함.)
 

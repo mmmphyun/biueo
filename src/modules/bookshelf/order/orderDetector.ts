@@ -7,6 +7,8 @@ import type {
 
 export type OrderRewardTier = 0 | 1 | 2 | 3;
 
+type GroupableOrderKind = 'hue' | 'height' | 'thickness' | 'motif';
+
 function isMonotonic(values: readonly number[]): boolean {
   if (values.length < 2) return false;
   let nonDecreasing = true;
@@ -14,6 +16,24 @@ function isMonotonic(values: readonly number[]): boolean {
   for (let i = 1; i < values.length; i += 1) {
     if (values[i] < values[i - 1]) nonDecreasing = false;
     if (values[i] > values[i - 1]) nonIncreasing = false;
+    if (!nonDecreasing && !nonIncreasing) return false;
+  }
+  return true;
+}
+
+/**
+ * 색 순서는 인접 색(|Δ| <= 1)끼리만 점진적으로 이어지는 단조열을 인정한다.
+ * 색 번호를 건너뛰는 우연한 일치를 걸러내기 위해 사용한다.
+ */
+function isAdjacentMonotonic(values: readonly number[]): boolean {
+  if (values.length < 3) return false;
+  let nonDecreasing = true;
+  let nonIncreasing = true;
+  for (let i = 1; i < values.length; i += 1) {
+    const diff = values[i] - values[i - 1];
+    if (Math.abs(diff) > 1) return false;
+    if (diff < 0) nonDecreasing = false;
+    if (diff > 0) nonIncreasing = false;
     if (!nonDecreasing && !nonIncreasing) return false;
   }
   return true;
@@ -69,6 +89,44 @@ function isStrictStepMonotonic(values: readonly number[]): boolean {
   return true;
 }
 
+function isAdjacentStrictStep(values: readonly number[]): boolean {
+  if (values.length < 4) return false;
+  let inc = true;
+  let dec = true;
+  for (let i = 1; i < values.length; i += 1) {
+    const diff = values[i] - values[i - 1];
+    if (diff !== 1) inc = false;
+    if (diff !== -1) dec = false;
+    if (!inc && !dec) return false;
+  }
+  return true;
+}
+
+function isUniformCompartment(
+  comp: readonly BookModel[],
+  kind: GroupableOrderKind
+): boolean {
+  if (comp.length < 3 || hasFallenBook(comp)) return false;
+  switch (kind) {
+    case 'hue': {
+      const first = comp[0].colorOrderIndex;
+      return comp.every((b) => b.colorOrderIndex === first);
+    }
+    case 'height': {
+      const first = comp[0].heightTier;
+      return comp.every((b) => b.heightTier === first);
+    }
+    case 'thickness': {
+      const first = comp[0].thicknessTier;
+      return comp.every((b) => b.thicknessTier === first);
+    }
+    case 'motif': {
+      const first = comp[0].motif;
+      return comp.every((b) => b.motif === first);
+    }
+  }
+}
+
 function evaluateSequenceOrders(
   books: readonly BookModel[],
   scope: OrderScope,
@@ -78,7 +136,7 @@ function evaluateSequenceOrders(
   if (books.length < 3) return kinds;
 
   const hues = books.map((b) => b.colorOrderIndex);
-  if (isMonotonic(hues)) {
+  if (isAdjacentMonotonic(hues)) {
     kinds.push('hue');
   }
 
@@ -154,14 +212,22 @@ export function detectShelfOrders(
     }
   }
 
-  const rowMatches: Record<'hue' | 'height' | 'thickness', number[]> = {
+  const rowShelfKinds: readonly GroupableOrderKind[] = [
+    'hue',
+    'height',
+    'thickness',
+    'motif',
+  ];
+  const rowMatches: Record<GroupableOrderKind, number[]> = {
     hue: [],
     height: [],
     thickness: [],
+    motif: [],
   };
   const minRowBooks = gridCols * 2;
 
   for (let r = 0; r < gridRows; r += 1) {
+    const rowComps: BookModel[][] = [];
     const rowBooks: BookModel[] = [];
     let allFilled = true;
     for (let col = 0; col < gridCols; col += 1) {
@@ -170,28 +236,52 @@ export function detectShelfOrders(
         allFilled = false;
         break;
       }
+      rowComps.push(comp);
       rowBooks.push(...comp);
     }
-    if (!allFilled || rowBooks.length < minRowBooks) continue;
+    if (!allFilled) continue;
 
-    const matched = evaluateSequenceOrders(rowBooks, 'row', false);
-    for (const kind of matched) {
-      if (kind === 'hue' || kind === 'height' || kind === 'thickness') {
+    if (rowBooks.length >= minRowBooks) {
+      const matched = evaluateSequenceOrders(rowBooks, 'row', false);
+      for (const kind of matched) {
+        if (kind !== 'written' && !rowMatches[kind].includes(r)) {
+          rowMatches[kind].push(r);
+        }
+      }
+    }
+
+    // 한 줄의 모든 칸이 각기 단일 속성으로 분류된 경우에도 행 질서로 인정한다.
+    for (const kind of rowShelfKinds) {
+      if (
+        !rowMatches[kind].includes(r) &&
+        rowComps.every((comp) => isUniformCompartment(comp, kind))
+      ) {
         rowMatches[kind].push(r);
       }
     }
   }
 
-  const shelfMatches: Record<'hue' | 'height' | 'thickness', number[]> = {
+  const shelfMatches: Record<GroupableOrderKind, number[]> = {
     hue: [],
     height: [],
     thickness: [],
+    motif: [],
   };
   const shelfBooks = byComp.flat();
   if (shelfBooks.length === books.length && shelfBooks.length >= 3 && !hasFallenBook(shelfBooks)) {
     const matched = evaluateSequenceOrders(shelfBooks, 'shelf', false);
     for (const kind of matched) {
-      if (kind === 'hue' || kind === 'height' || kind === 'thickness') {
+      if (kind !== 'written' && !shelfMatches[kind].includes(0)) {
+        shelfMatches[kind].push(0);
+      }
+    }
+
+    // 전체 칸이 각기 단일 속성으로 깔끔히 분류된 상태도 전체 서가 질서(Tier 3)로 인정한다.
+    for (const kind of rowShelfKinds) {
+      if (
+        !shelfMatches[kind].includes(0) &&
+        byComp.every((comp) => isUniformCompartment(comp, kind))
+      ) {
         shelfMatches[kind].push(0);
       }
     }
@@ -199,11 +289,6 @@ export function detectShelfOrders(
 
   const results: DetectedOrder[] = [];
   const allKinds: readonly OrderKind[] = ['hue', 'height', 'thickness', 'motif', 'written'];
-  const rowShelfKinds: readonly ('hue' | 'height' | 'thickness')[] = [
-    'hue',
-    'height',
-    'thickness',
-  ];
 
   for (const kind of allKinds) {
     if (compMatches[kind].length > 0) {
@@ -269,7 +354,7 @@ export function detectLiveCompartmentOrders(
 
   const kinds: OrderKind[] = [];
   const hues = comp.map((b) => b.colorOrderIndex);
-  if (isAllEqual(hues) || isStrictStepMonotonic(hues)) {
+  if (isAllEqual(hues) || isAdjacentStrictStep(hues)) {
     kinds.push('hue');
   }
 
