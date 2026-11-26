@@ -37,6 +37,7 @@ import {
   type ShelfLayoutGeometry,
 } from './layout/shelfLayout';
 import { ChaosWorld, computeDeskSafeBounds } from './physics/chaosWorld';
+import { createMotionShakeDetector } from './physics/motionShake';
 import {
   buildNeatPoses,
   commitBookPlacement,
@@ -139,7 +140,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
 
   let spaceHeld = false;
   let spacePulseTimerMs = 0;
-  let lastMotionShakeMs = 0;
+  const motionDetector = createMotionShakeDetector();
   let paused = false;
   let rafId: number | null = null;
   let lastFrameTimeMs = 0;
@@ -1429,20 +1430,17 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
   const handleDeviceMotion = (e: DeviceMotionEvent) => {
     if (!motionShakeEnabled) return;
     if (shelfState !== 'LOCKED_NEAT' && shelfState !== 'SHAKING_CHAOS') return;
-    const acc = e.acceleration ?? e.accelerationIncludingGravity;
-    if (!acc) return;
+    const hit = motionDetector.sample(
+      e.acceleration,
+      e.accelerationIncludingGravity,
+      performance.now()
+    );
+    if (!hit) return;
 
-    const ax = acc.x ?? 0;
-    const ay = acc.y ?? 0;
-    const az = acc.z ?? 0;
-    const rawMag = Math.hypot(ax, ay, az);
-    const linearMag = e.acceleration ? rawMag : Math.abs(rawMag - 9.81);
-    const now = performance.now();
-
-    if (linearMag > 15 && now - lastMotionShakeMs >= 180) {
-      lastMotionShakeMs = now;
-      triggerShake(Math.min(1, linearMag / 26));
-    }
+    shakeDirSign = hit.dirSign;
+    markUserInteracted();
+    foley.unlock();
+    triggerShake(hit.intensity);
   };
 
   const handleResize = () => {
@@ -1537,6 +1535,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     frameShakeAngle = 0;
     chaosWorld?.dispose();
     chaosWorld = null;
+    motionDetector.reset();
     foley.dispose();
     if (rafId !== null) {
       window.cancelAnimationFrame(rafId);
@@ -1578,6 +1577,7 @@ export function createShelfEngine(callbacks: ShelfEngineCallbacks): ShelfEngineC
     frameShakeAngle = 0;
     chaosWorld?.dispose();
     chaosWorld = null;
+    motionDetector.reset();
     poses = new Map();
     bakeKey = '';
     activeDrag = null;
