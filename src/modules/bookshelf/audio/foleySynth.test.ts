@@ -170,15 +170,20 @@ describe('foleySynth', () => {
 
     synth.playOrderReward(1);
     expect(mock.oscillators.length).toBe(4);
-    expect(vibrateMock).toHaveBeenLastCalledWith([10, 45, 14]);
+    expect(vibrateMock).toHaveBeenLastCalledWith([20, 45, 26]);
 
     synth.playOrderReward(2);
     expect(mock.oscillators.length).toBe(10);
-    expect(vibrateMock).toHaveBeenLastCalledWith([10, 40, 12, 40, 16]);
+    expect(vibrateMock).toHaveBeenLastCalledWith([18, 40, 24, 40, 30]);
 
     synth.playOrderReward(3);
     expect(mock.oscillators.length).toBe(22);
-    expect(vibrateMock).toHaveBeenLastCalledWith([12, 35, 14, 35, 18, 45, 24]);
+    expect(vibrateMock).toHaveBeenLastCalledWith([20, 35, 26, 35, 32, 45, 42]);
+
+    synth.playBookPickup();
+    expect(vibrateMock).toHaveBeenLastCalledWith(16);
+    synth.playBookSnap(2);
+    expect(vibrateMock).toHaveBeenLastCalledWith(30);
 
     vi.stubGlobal('navigator', {});
     expect(() => synth.playOrderReward(2)).not.toThrow();
@@ -197,7 +202,7 @@ describe('foleySynth', () => {
 
     synth.playCompartmentOrderChime();
     expect(mock.oscillators.length).toBe(2);
-    expect(vibrateMock).toHaveBeenLastCalledWith([8, 35, 10]);
+    expect(vibrateMock).toHaveBeenLastCalledWith([18, 40, 22]);
 
     synth.setEnabled(false);
     vibrateMock.mockClear();

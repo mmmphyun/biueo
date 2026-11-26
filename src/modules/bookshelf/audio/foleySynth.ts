@@ -258,9 +258,9 @@ export function createFoleySynth(options: FoleySynthOptions = {}): FoleySynth {
     if (!enabled || impactSpeed <= 1.2) return;
     const now = nowMs();
 
-    if (impactSpeed >= 3.2 && now - lastCollisionHapticMs >= COLLISION_HAPTIC_COOLDOWN_MS) {
+    if (impactSpeed >= 2.6 && now - lastCollisionHapticMs >= COLLISION_HAPTIC_COOLDOWN_MS) {
       lastCollisionHapticMs = now;
-      const pulseMs = Math.min(16, Math.max(8, Math.round(6 + impactSpeed * 0.9)));
+      const pulseMs = Math.min(28, Math.max(16, Math.round(12 + impactSpeed * 1.6)));
       triggerHaptic(pulseMs, true);
     }
 
@@ -315,8 +315,8 @@ export function createFoleySynth(options: FoleySynthOptions = {}): FoleySynth {
     lastShakeRattleMs = now;
 
     const clamped = Math.max(0.2, Math.min(1, intensity));
-    if (clamped >= 0.45) {
-      triggerHaptic(10, true);
+    if (clamped >= 0.35) {
+      triggerHaptic(clamped >= 0.75 ? [20, 25, 16] : 22, true);
     }
 
     const audioCtx = ensureContext();
@@ -349,6 +349,7 @@ export function createFoleySynth(options: FoleySynthOptions = {}): FoleySynth {
 
   const playBookPickup = (): void => {
     if (!enabled) return;
+    triggerHaptic(16, true);
     const audioCtx = ensureContext();
     if (!audioCtx || !masterGain) return;
 
@@ -373,7 +374,8 @@ export function createFoleySynth(options: FoleySynthOptions = {}): FoleySynth {
 
   const playBookSnap = (thicknessTier: BookThicknessTier = 1): void => {
     if (!enabled) return;
-    triggerHaptic(12, true);
+    const snapMs = thicknessTier === 0 ? 18 : thicknessTier === 2 ? 30 : 24;
+    triggerHaptic(snapMs, true);
 
     const audioCtx = ensureContext();
     if (!audioCtx || !masterGain) return;
@@ -418,7 +420,7 @@ export function createFoleySynth(options: FoleySynthOptions = {}): FoleySynth {
 
   const playCompartmentOrderChime = (): void => {
     if (!enabled) return;
-    triggerHaptic([8, 35, 10], true);
+    triggerHaptic([18, 40, 22], true);
 
     const audioCtx = ensureContext();
     if (!audioCtx) return;
@@ -429,7 +431,7 @@ export function createFoleySynth(options: FoleySynthOptions = {}): FoleySynth {
 
   const playDoorLatch = (isOpening: boolean): void => {
     if (!enabled) return;
-    triggerHaptic(isOpening ? [8, 30, 8] : 14, true);
+    triggerHaptic(isOpening ? [18, 30, 22] : 28, true);
 
     const audioCtx = ensureContext();
     if (!audioCtx || !masterGain) return;
@@ -486,6 +488,7 @@ export function createFoleySynth(options: FoleySynthOptions = {}): FoleySynth {
 
   const playPageFlip = (): void => {
     if (!enabled) return;
+    triggerHaptic(14, true);
     const audioCtx = ensureContext();
     if (!audioCtx || !masterGain || !noiseBuffer) return;
 
@@ -517,11 +520,11 @@ export function createFoleySynth(options: FoleySynthOptions = {}): FoleySynth {
     if (!enabled || tier === 0) return;
 
     if (tier === 1) {
-      triggerHaptic([10, 45, 14], true);
+      triggerHaptic([20, 45, 26], true);
     } else if (tier === 2) {
-      triggerHaptic([10, 40, 12, 40, 16], true);
+      triggerHaptic([18, 40, 24, 40, 30], true);
     } else {
-      triggerHaptic([12, 35, 14, 35, 18, 45, 24], true);
+      triggerHaptic([20, 35, 26, 35, 32, 45, 42], true);
     }
 
     const audioCtx = ensureContext();
