@@ -148,11 +148,14 @@ export function BookNoteDialog({
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={handleTextareaKeyDown}
             placeholder={promptEntry?.placeholder ?? '떠오른 생각을 짧게 적어보세요.'}
-            style={{
-              backgroundColor: theme.dockInputBg,
-              color: theme.dockInk,
-              borderColor: theme.dockBorderStrong,
-            }}
+            style={
+              {
+                backgroundColor: theme.dockInputBg,
+                color: theme.dockInk,
+                '--note-border': theme.dockBorderStrong,
+                '--note-focus-border': theme.dockAccent,
+              } as React.CSSProperties
+            }
             className="biueo-note-textarea rounded-md border px-3.5 py-3 text-base leading-[1.65]"
           />
         </div>
