@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultVolume } from './defaultBooks';
+import { createDefaultVolume, resetVolumePlacements } from './defaultBooks';
 import {
   BOOK_COLOR_IDS,
   BOOK_GAP_RATIO,
@@ -143,6 +143,34 @@ describe('createDefaultVolume combinatorial invariants', () => {
     const vol5x3 = createDefaultVolume(1, '5x3');
     const used5x3 = new Set(vol5x3.books.map((b) => getBookRitualPrompt(b).promptText));
     expect(used5x3.size).toBe(16);
+  });
+
+  it('restores unplaced and fallen books to valid upright placements while preserving notes', () => {
+    for (const preset of ['3x3', '5x3'] as const) {
+      const vol = createDefaultVolume(2, preset, '2026-11-26T00:00:00.000Z');
+      vol.books[0] = {
+        ...vol.books[0],
+        placement: null,
+        note: {
+          promptType: vol.books[0].defaultPromptType,
+          promptText: '질문',
+          content: '남겨둔 한 줄',
+          createdAt: '2026-11-26T00:01:00.000Z',
+          updatedAt: '2026-11-26T00:01:00.000Z',
+        },
+      };
+      vol.books[1] = {
+        ...vol.books[1],
+        placement: vol.books[1].placement ? { ...vol.books[1].placement, fallenDir: 1 } : null,
+      };
+
+      const reset = resetVolumePlacements(vol, '2026-11-26T02:00:00.000Z');
+      expect(reset.updatedAt).toBe('2026-11-26T02:00:00.000Z');
+      expect(reset.books[0].note?.content).toBe('남겨둔 한 줄');
+      expect(reset.books[0].placement).not.toBeNull();
+      expect(reset.books[1].placement?.fallenDir).toBeUndefined();
+      expect(reset.books.every((b) => b.placement !== null && b.placement.fallenDir === undefined)).toBe(true);
+    }
   });
 });
 

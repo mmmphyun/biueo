@@ -10,6 +10,7 @@ import { ShelfStage } from './modules/bookshelf/components/ShelfStage';
 import {
   createDefaultPreferences,
   createDefaultVolume,
+  resetVolumePlacements,
 } from './modules/bookshelf/data/defaultBooks';
 import {
   DESK_THEMES,
@@ -294,6 +295,14 @@ export default function App() {
     [volumes]
   );
 
+  const handleResetActivePlacements = useCallback(() => {
+    const resetVol = resetVolumePlacements(activeVolume);
+    setTappedBookId(null);
+    setVolumes((prev) => prev.map((v) => (v.id === resetVol.id ? resetVol : v)));
+    setVolumeRevision((r) => r + 1);
+    void saveVolume(resetVol);
+  }, [activeVolume]);
+
   const handleExportBackup = useCallback(() => {
     const currentPrefs: UserPreferences = {
       ...preferences,
@@ -524,6 +533,7 @@ export default function App() {
         storageStatus={storageStatus}
         onSelectVolume={handleSelectVolume}
         onCreateVolume={handleCreateVolume}
+        onResetActivePlacements={handleResetActivePlacements}
         onExportBackup={handleExportBackup}
         onImportBackup={handleImportBackup}
         onClose={() => setHelpOpen(false)}

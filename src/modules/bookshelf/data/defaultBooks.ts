@@ -150,6 +150,31 @@ export function createDefaultVolume(
   };
 }
 
+/**
+ * 메모와 책 메타데이터는 그대로 둔 채, 현재 서가의 책 배치만 초기 기립 상태로 되돌린다.
+ */
+export function resetVolumePlacements(
+  volume: ShelfVolume,
+  updatedAtIso = new Date().toISOString()
+): ShelfVolume {
+  const baseline = createDefaultVolume(volume.volumeNumber, volume.gridPreset, volume.createdAt);
+  const placementById = new Map(baseline.books.map((b) => [b.id, b.placement]));
+
+  return {
+    ...volume,
+    updatedAt: updatedAtIso,
+    books: volume.books.map((book, index) => {
+      const basePlacement =
+        placementById.get(book.id) ?? baseline.books[index]?.placement ?? null;
+      return {
+        ...book,
+        placement: basePlacement ? { ...basePlacement } : null,
+        note: book.note ? { ...book.note } : null,
+      };
+    }),
+  };
+}
+
 export function createDefaultPreferences(
   activeVolumeId = 'vol-1-3x3',
   theme: DeskThemeId = 'sage'

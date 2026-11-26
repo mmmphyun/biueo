@@ -105,6 +105,7 @@ interface HelpDialogProps {
   readonly storageStatus: StorageStatus;
   readonly onSelectVolume: (volumeId: string) => void;
   readonly onCreateVolume: (preset: ShelfGridPreset) => void;
+  readonly onResetActivePlacements: () => void;
   readonly onExportBackup: () => string;
   readonly onImportBackup: (payload: BackupPayloadV1) => Promise<void>;
   readonly onClose: () => void;
@@ -135,6 +136,7 @@ export function HelpDialog({
   storageStatus,
   onSelectVolume,
   onCreateVolume,
+  onResetActivePlacements,
   onExportBackup,
   onImportBackup,
   onClose,
@@ -564,6 +566,30 @@ export function HelpDialog({
                 className="biueo-btn px-4 text-sm font-medium"
               >
                 Vol. {nextVolumeNumber} 새로 시작
+              </button>
+            </div>
+
+            <div
+              style={{ borderColor: theme.dockBorder }}
+              className="flex flex-wrap items-center justify-between gap-2.5 rounded-lg border p-3.5"
+            >
+              <p className="text-sm leading-relaxed" style={{ color: theme.dockMuted }}>
+                메모는 그대로 두고, 흩어진 책만 처음처럼 책장에 꽂아둬요.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setDataError(null);
+                  onResetActivePlacements();
+                  setDataNotice('현재 서가의 책을 제자리로 돌려놨어요.');
+                }}
+                style={{
+                  borderColor: theme.dockBorderStrong,
+                  color: theme.dockInk,
+                }}
+                className="biueo-btn border px-3.5 text-sm font-medium"
+              >
+                현재 서가 책 제자리로 돌려놓기
               </button>
             </div>
           </section>
