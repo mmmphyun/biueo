@@ -59,13 +59,33 @@ export default function App() {
   const [themeId, setThemeId] = useState<DeskThemeId>(() =>
     pickRandomThemeForMode(initialModeInfo.mode, readLastThemeId())
   );
+  const motionSupported = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      typeof DeviceMotionEvent !== 'undefined' &&
+      window.matchMedia('(pointer: coarse)').matches
+    );
+  }, []);
+
+  const needsMotionPermission = useMemo(() => {
+    if (!motionSupported || typeof DeviceMotionEvent === 'undefined') return false;
+    const motionEvent = DeviceMotionEvent as unknown as {
+      requestPermission?: () => Promise<'granted' | 'denied'>;
+    };
+    return typeof motionEvent.requestPermission === 'function';
+  }, [motionSupported]);
+
   const [audioEnabled, setAudioEnabled] = useState<boolean>(() =>
     readAudioEnabledPreference()
   );
-  const [motionShakeEnabled, setMotionShakeEnabled] = useState(false);
+  // 안드로이드 등 별도 OS 권한 팝업이 없는 모바일 기기에서는 즉시 가속도 흔들기를 켠다.
+  const [motionShakeEnabled, setMotionShakeEnabled] = useState<boolean>(
+    () => motionSupported && !needsMotionPermission
+  );
   const [preferences, setPreferences] = useState<UserPreferences>(() => ({
     ...createDefaultPreferences('vol-1-3x3', themeId),
     audioEnabled,
+    motionShakeEnabled,
   }));
   const [storageStatus, setStorageStatus] = useState<StorageStatus>({
     backend: 'indexeddb',
@@ -86,6 +106,7 @@ export default function App() {
     () => ({
       ...createDefaultPreferences(activeVolume.id, themeId),
       audioEnabled,
+      motionShakeEnabled,
     }),
     // 최초 마운트 스냅샷만 엔진에 전달한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,14 +120,6 @@ export default function App() {
     writtenCount: activeVolume.books.filter((b) => b.note !== null).length,
     isDoorOpen: false,
   }));
-
-  const motionSupported = useMemo(() => {
-    if (typeof window === 'undefined') return false;
-    return (
-      typeof DeviceMotionEvent !== 'undefined' &&
-      window.matchMedia('(pointer: coarse)').matches
-    );
-  }, []);
 
   // 앱 시작 시 IndexedDB(biueo-db)에서 서가 및 설정을 비동기로 복원한다.
   useEffect(() => {
@@ -390,7 +403,7 @@ export default function App() {
               style={{ backgroundColor: theme.ink }}
             />
           )}
-          <span>흔들기</span>
+          <span>{needsMotionPermission && !motionShakeEnabled ? '흔들기 허용' : '흔들기'}</span>
         </button>
       )}
 

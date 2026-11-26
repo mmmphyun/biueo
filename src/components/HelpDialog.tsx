@@ -327,7 +327,8 @@ export function HelpDialog({
           <ul className="space-y-3.5">
             <li>
               <strong className="font-semibold">책장 흔들기</strong>: 문이 닫힌 상태에서 책장을 잡고
-              흔들거나 Space 키를 누르면 책들이 안쪽에서 무너져요.
+              흔들거나 Space 키를 누르면 책들이 안쪽에서 무너져요. 휴대폰에서는 기기를 직접 흔들어도
+              반응해요(아이폰은 상단 &lsquo;흔들기 허용&rsquo;을 한 번 눌러주세요).
             </li>
             <li>
               <strong className="font-semibold">문 열고 정리하기</strong>: 오른쪽 걸쇠를 누르거나
