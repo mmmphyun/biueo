@@ -3,8 +3,8 @@
 > 새 세션 시작 시 반드시 `AGENTS.md` -> `docs/PLAN.md` -> `docs/CONTRACTS.md` -> 본 파일 순으로 읽고, 이미 확정된 설계를 재질문(재그릴링)하지 마십시오.
 
 ## Current Status
-- **Active Phase**: Phase 3 완료 (Phase 4 착수 대기)
-- **Repository State**: Phase 3(1페이지 리츄얼 편집 `BookNoteDialog`, `IndexedDB` `biueo-db` v1 영속화, `Vol. 2` 다중 서가 동등 확장, JSON 백업/복원 검증, `?` 모달 4탭 개편 및 6편 논문·DOI 링크·Kyeong et al. 2017 국내 감사 명상 fMRI 논문 반영, 사용자 중심 문구 재작성, 전 UI `>= 14px`·8종 테마 고대비 토큰 정립) 구현 및 단위 테스트·빌드·라이브 브라우저 감사 완료.
+- **Active Phase**: Phase 3 완료 · Firebase Hosting 실서버 배포(`https://biueo.web.app`) 및 WIF 키리스 2단 CI/CD 구성 완료
+- **Repository State**: Phase 3(1페이지 리츄얼 편집 `BookNoteDialog`, `IndexedDB` `biueo-db` v1 영속화, `Vol. 2` 다중 서가 동등 확장, JSON 백업/복원 검증, `?` 모달 4탭 개편 및 6편 논문·DOI 링크·Kyeong et al. 2017 반영, 전 UI `>= 14px`·8종 테마 고대비 토큰 정립) 및 Firebase Hosting(`biueo-mind` / `https://biueo.web.app`)·GCP Workload Identity Federation(OIDC 키리스)·`.github/workflows/ci-deploy.yml`·GitHub `production` 환경 수동 승인 게이트 구축 완료.
 
 ## Completed Milestones
 - [x] 핵심 컨셉 및 6편 검증 논문 근거 조사 (Holmes 2009/2010, Hobson 2018, Kyeong·김주환·김재진 2017, Cascio 2016, Seligman 2005, Bolier 2013 — 철회 논문 Brooks 2016 제거 및 적용 한계 명시)

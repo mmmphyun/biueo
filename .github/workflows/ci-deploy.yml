@@ -1,0 +1,201 @@
+name: CI & Keyless Firebase Hosting Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Typecheck, Test, Build & Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Run unit tests
+        run: npx vitest run
+
+      - name: Production build
+        run: npm run build
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Upload built bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-bundle
+          path: dist
+          retention-days: 3
+
+  deploy-pr-preview:
+    name: Deploy PR Preview (OIDC)
+    needs: verify
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Authenticate to Google Cloud (Keyless OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Download built bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-bundle
+          path: dist
+
+      - name: Deploy PR preview channel
+        id: preview
+        env:
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_TARGET: ${{ vars.FIREBASE_HOSTING_TARGET }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          OUT=$(npx -y firebase-tools@latest hosting:channel:deploy "pr-${PR_NUMBER}" \
+            --only "${FIREBASE_TARGET}" \
+            --project "${FIREBASE_PROJECT}" \
+            --expires 7d \
+            --non-interactive \
+            --json)
+          URL=$(node -e "const d = JSON.parse(process.argv[1]); const r = d.result || {}; const entry = r[process.env.FIREBASE_TARGET] || Object.values(r)[0]; console.log(entry?.url || '');" "$OUT")
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "### PR Preview Deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: ${URL}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment preview URL on PR
+        if: steps.preview.outputs.url != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "${PR_NUMBER}" --body "Firebase Hosting PR 프리뷰가 배포되었습니다: ${PREVIEW_URL}"
+
+  deploy-staging:
+    name: Deploy Staging Preview (OIDC)
+    needs: verify
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Authenticate to Google Cloud (Keyless OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Download built bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-bundle
+          path: dist
+
+      - name: Deploy staging preview channel
+        env:
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_TARGET: ${{ vars.FIREBASE_HOSTING_TARGET }}
+        run: |
+          set -euo pipefail
+          OUT=$(npx -y firebase-tools@latest hosting:channel:deploy staging \
+            --only "${FIREBASE_TARGET}" \
+            --project "${FIREBASE_PROJECT}" \
+            --expires 7d \
+            --non-interactive \
+            --json)
+          URL=$(node -e "const d = JSON.parse(process.argv[1]); const r = d.result || {}; const entry = r[process.env.FIREBASE_TARGET] || Object.values(r)[0]; console.log(entry?.url || '');" "$OUT")
+          echo "### Staging Preview Ready" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Preview URL: ${URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Approval required in \`production\` environment before promoting to https://biueo.web.app" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-prod:
+    name: Deploy Production (Approval Required)
+    needs: [verify, deploy-staging]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: production
+      url: https://biueo.web.app
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Authenticate to Google Cloud (Keyless OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Download built bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-bundle
+          path: dist
+
+      - name: Deploy live channel to Firebase Hosting
+        env:
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_TARGET: ${{ vars.FIREBASE_HOSTING_TARGET }}
+        run: |
+          npx -y firebase-tools@latest deploy \
+            --only "hosting:${FIREBASE_TARGET}" \
+            --project "${FIREBASE_PROJECT}" \
+            --non-interactive
